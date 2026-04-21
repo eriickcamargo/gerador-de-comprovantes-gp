@@ -118,7 +118,7 @@ function buildReceiptHTML(data) {
   // Bloco de pagamento em dinheiro
   const dinheiroBlock = isDinheiro ? `
     <div class="pix-box" style="border-left-color:#e6a817;">
-      <h3 style="color:#c47e00;">💵 Pagamento em Dinheiro</h3>
+      <h3 style="color:#c47e00;">Pagamento em Dinheiro</h3>
       <table>
         ${paymentDate ? `<tr><td class="label">Data do pagamento:</td><td>${paymentDate}</td></tr>` : ''}
       </table>
@@ -130,7 +130,7 @@ function buildReceiptHTML(data) {
   if (valeType === 'Férias' && extraData) {
     extraInfoBlock = `
     <div class="pix-box" style="border-left-color:#3498db;">
-      <h3 style="color:#2980b9;">🏖️ Detalhes das Férias</h3>
+      <h3 style="color:#2980b9;">Detalhes das Férias</h3>
       <table>
         ${extraData.periodoAquisitivo ? `<tr><td class="label">Período Aquisitivo:</td><td>${extraData.periodoAquisitivo}</td></tr>` : ''}
         ${extraData.periodoGozo ? `<tr><td class="label">Período de Gozo:</td><td>${extraData.periodoGozo}</td></tr>` : ''}
@@ -140,7 +140,7 @@ function buildReceiptHTML(data) {
   } else if (valeType === '13º Salário' && extraData) {
     extraInfoBlock = `
     <div class="pix-box" style="border-left-color:#e74c3c;">
-      <h3 style="color:#c0392b;">🎁 Detalhes do 13º Salário</h3>
+      <h3 style="color:#c0392b;">Detalhes do 13º Salário</h3>
       <table>
         ${extraData.anoBase ? `<tr><td class="label">Ano de Referência:</td><td>${extraData.anoBase}</td></tr>` : ''}
       </table>
@@ -333,7 +333,7 @@ function buildReceiptHTML(data) {
 
     ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
     <div class="pix-box">
-      <h3>✓ Pagamento via PIX</h3>
+      <h3>Pagamento via PIX</h3>
       <table>${pixInfo.join('')}</table>
     </div>` : '')}
 
@@ -341,13 +341,13 @@ function buildReceiptHTML(data) {
       <div class="sig-block">
         <div class="sig-line">
           <div class="sig-name">${employeeName}</div>
-          <div class="sig-role">${cargo || 'Funcionário(a)'}${setor ? ' — ' + setor : ''}</div>
+          <div class="sig-role">${employeeCpf ? 'CPF: ' + employeeCpf : 'Funcionário(a)'}</div>
         </div>
       </div>
       <div class="sig-block">
         <div class="sig-line">
           <div class="sig-name">${companyName || 'EMPRESA'}</div>
-          <div class="sig-role">Responsável pela empresa</div>
+          <div class="sig-role">${companyCnpj ? 'CNPJ: ' + companyCnpj : 'Responsável pela empresa'}</div>
         </div>
       </div>
     </div>
@@ -356,7 +356,7 @@ function buildReceiptHTML(data) {
 
   <!-- Separador -->
   <hr class="divider" />
-  <p class="divider-label">✂ &nbsp; Recortar aqui — 2ª via (empresa) &nbsp; ✂</p>
+  <p class="divider-label">Recortar aqui — 2ª via (empresa)</p>
   <hr class="divider" />
 
   <!-- 2ª VIA -->
@@ -390,7 +390,7 @@ function buildReceiptHTML(data) {
 
     ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
     <div class="pix-box">
-      <h3>✓ Pagamento via PIX</h3>
+      <h3>Pagamento via PIX</h3>
       <table>${pixInfo.join('')}</table>
     </div>` : '')}
 
@@ -398,13 +398,13 @@ function buildReceiptHTML(data) {
       <div class="sig-block">
         <div class="sig-line">
           <div class="sig-name">${employeeName}</div>
-          <div class="sig-role">${cargo || 'Funcionário(a)'}${setor ? ' — ' + setor : ''}</div>
+          <div class="sig-role">${employeeCpf ? 'CPF: ' + employeeCpf : 'Funcionário(a)'}</div>
         </div>
       </div>
       <div class="sig-block">
         <div class="sig-line">
           <div class="sig-name">${companyName || 'EMPRESA'}</div>
-          <div class="sig-role">Responsável pela empresa</div>
+          <div class="sig-role">${companyCnpj ? 'CNPJ: ' + companyCnpj : 'Responsável pela empresa'}</div>
         </div>
       </div>
     </div>

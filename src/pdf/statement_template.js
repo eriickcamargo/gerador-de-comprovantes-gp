@@ -260,7 +260,7 @@ function buildStatementHTML(data, receipts) {
         ${setor ? `Setor: <strong>${setor}</strong>` : ''}
       </div>
     </div>
-    <div class="period-badge">📅 ${period}</div>
+    <div class="period-badge">${period}</div>
   </div>
 
   <!-- Tabela de recibos -->
