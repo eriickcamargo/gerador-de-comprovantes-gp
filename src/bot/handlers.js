@@ -60,6 +60,10 @@ function valeKeyboard() {
         { text: '🍴 Refeição', callback_data: 'vale_Refeição' },
         { text: '⛽ Combustível', callback_data: 'vale_Combustível' },
       ],
+      [
+        { text: '🏖️ Férias', callback_data: 'vale_Férias' },
+        { text: '🎁 13º Salário', callback_data: 'vale_13º Salário' },
+      ],
       [{ text: '💰 Adiantamento Salarial', callback_data: 'vale_Adiantamento Salarial' }],
       [{ text: '📋 Outro (digitar)', callback_data: 'vale_outro' }],
     ],
@@ -79,6 +83,10 @@ function valeKeyboardDinheiro() {
       [
         { text: '🍴 Refeição',    callback_data: 'dvale_Refeição' },
         { text: '⛽ Combustível',  callback_data: 'dvale_Combustível' },
+      ],
+      [
+        { text: '🏖️ Férias', callback_data: 'dvale_Férias' },
+        { text: '🎁 13º Salário', callback_data: 'dvale_13º Salário' },
       ],
       [{ text: '💰 Adiantamento Salarial', callback_data: 'dvale_Adiantamento Salarial' }],
       [{ text: '📋 Outro (digitar)', callback_data: 'dvale_outro' }],
@@ -215,6 +223,7 @@ async function finishAndSendReceipt(bot, chatId, userId) {
       agenciaConta: extracted.agencia_conta,
       transactionId: extracted.id_transacao,
       bankName: extracted.banco_beneficiario,
+      extraData: data.extraData || null,
     };
 
     // Salva no DB para obter o número sequencial
@@ -233,6 +242,7 @@ async function finishAndSendReceipt(bot, chatId, userId) {
       company_name: receiptData.companyName,
       company_cnpj: receiptData.companyCnpj,
       telegram_user_id: String(userId),
+      extraData: receiptData.extraData,
     });
 
     receiptData.receiptNumber = savedReceipt.receipt_number;
@@ -309,6 +319,7 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
       valeType:       data.dinheiroValeType,
       paymentDate:    data.dinheiroData,
       paymentMethod:  'dinheiro',
+      extraData:      data.extraData || null,
     };
 
     const savedReceipt = saveReceipt({
@@ -322,6 +333,7 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
       company_name:     receiptData.companyName,
       company_cnpj:     receiptData.companyCnpj,
       telegram_user_id: String(userId),
+      extraData:        receiptData.extraData,
     });
 
     receiptData.receiptNumber = savedReceipt.receipt_number;
@@ -845,6 +857,40 @@ function startBot() {
         break;
       }
 
+      case STATES.AWAITING_FERIAS_AQUISITIVO: {
+        setData(userId, 'extraData', { periodoAquisitivo: msg.text.trim() });
+        setState(userId, STATES.AWAITING_FERIAS_GOZO);
+        bot.sendMessage(chatId, `✅ Período Aquisitivo: *${escapeMd(msg.text.trim())}*\n\nQual é o *Período de Gozo* (ex: 01/05/2026 a 30/05/2026)?`, { parse_mode: 'Markdown' });
+        break;
+      }
+
+      case STATES.AWAITING_FERIAS_GOZO: {
+        const d = getData(userId);
+        d.extraData = d.extraData || {};
+        d.extraData.periodoGozo = msg.text.trim();
+        const isDinheiro = !!d.dinheiroName;
+        if (isDinheiro) await finishAndSendCashReceipt(bot, chatId, userId);
+        else await finishAndSendReceipt(bot, chatId, userId);
+        break;
+      }
+
+      case STATES.AWAITING_DECIMO_PARCELA: {
+        setData(userId, 'extraData', { parcelaDecimo: msg.text.trim() });
+        setState(userId, STATES.AWAITING_DECIMO_ANO);
+        bot.sendMessage(chatId, `✅ Parcela: *${escapeMd(msg.text.trim())}*\n\nQual é o *Ano de Referência* (ex: 2026)?`, { parse_mode: 'Markdown' });
+        break;
+      }
+
+      case STATES.AWAITING_DECIMO_ANO: {
+        const d = getData(userId);
+        d.extraData = d.extraData || {};
+        d.extraData.anoBase = msg.text.trim();
+        const isDinheiro = !!d.dinheiroName;
+        if (isDinheiro) await finishAndSendCashReceipt(bot, chatId, userId);
+        else await finishAndSendReceipt(bot, chatId, userId);
+        break;
+      }
+
       default: {
         if (state === STATES.IDLE) {
           bot.sendMessage(
@@ -952,6 +998,18 @@ function startBot() {
         chat_id: chatId,
         message_id: query.message.message_id,
       });
+
+      if (valeType === 'Férias') {
+        setState(userId, STATES.AWAITING_FERIAS_AQUISITIVO);
+        await bot.sendMessage(chatId, `✅ Tipo selecionado: *Férias*\n\nQual é o *Período Aquisitivo* (ex: 2024/2025)?`, { parse_mode: 'Markdown' });
+        return;
+      }
+      if (valeType === '13º Salário') {
+        setState(userId, STATES.AWAITING_DECIMO_PARCELA);
+        await bot.sendMessage(chatId, `✅ Tipo selecionado: *13º Salário*\n\nQual é a *Parcela* (ex: 1ª Parcela, Parcela Única)?`, { parse_mode: 'Markdown' });
+        return;
+      }
+
       await bot.sendMessage(chatId, `✅ Tipo selecionado: *Vale ${escapeMd(valeType)}*`, { parse_mode: 'Markdown' });
       await finishAndSendCashReceipt(bot, chatId, userId);
       return;
@@ -974,6 +1032,18 @@ function startBot() {
         chat_id: chatId,
         message_id: query.message.message_id,
       });
+
+      if (valeType === 'Férias') {
+        setState(userId, STATES.AWAITING_FERIAS_AQUISITIVO);
+        await bot.sendMessage(chatId, `✅ Tipo selecionado: *Férias*\n\nQual é o *Período Aquisitivo* (ex: 2024/2025)?`, { parse_mode: 'Markdown' });
+        return;
+      }
+      if (valeType === '13º Salário') {
+        setState(userId, STATES.AWAITING_DECIMO_PARCELA);
+        await bot.sendMessage(chatId, `✅ Tipo selecionado: *13º Salário*\n\nQual é a *Parcela* (ex: 1ª Parcela, Parcela Única)?`, { parse_mode: 'Markdown' });
+        return;
+      }
+
       await bot.sendMessage(chatId, `✅ Tipo selecionado: *Vale ${valeType}*`, { parse_mode: 'Markdown' });
       await finishAndSendReceipt(bot, chatId, userId);
     }

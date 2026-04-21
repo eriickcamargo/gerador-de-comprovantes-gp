@@ -75,16 +75,19 @@ async function initDB() {
       pdf_path         TEXT,
       telegram_user_id TEXT,
       payment_method   TEXT DEFAULT 'pix',
+      extra_data       TEXT,
       created_at       TEXT DEFAULT (datetime('now'))
     )
   `);
 
-  // Migração segura: adiciona coluna payment_method em bancos já existentes
+  // Migração segura: adiciona colunas em bancos já existentes
   try {
     db.run(`ALTER TABLE receipts ADD COLUMN payment_method TEXT DEFAULT 'pix'`);
-  } catch (_) {
-    // Coluna já existe — ignora o erro
-  }
+  } catch (_) { }
+
+  try {
+    db.run(`ALTER TABLE receipts ADD COLUMN extra_data TEXT`);
+  } catch (_) { }
 
   persist();
   console.log('✅ Banco de dados inicializado em:', DB_PATH);

@@ -23,12 +23,17 @@ function generateReceiptNumber() {
 function saveReceipt(data) {
   const receiptNumber = generateReceiptNumber();
 
+  let extraDataStr = null;
+  if (data.extraData && Object.keys(data.extraData).length > 0) {
+    extraDataStr = JSON.stringify(data.extraData);
+  }
+
   db.run(`
     INSERT INTO receipts (
       receipt_number, employee_name, cargo, setor, amount, vale_type,
       payment_date, payment_time, pix_key, agencia_conta, transaction_id,
-      bank_name, company_name, company_cnpj, pdf_path, telegram_user_id, payment_method
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      bank_name, company_name, company_cnpj, pdf_path, telegram_user_id, payment_method, extra_data
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     receiptNumber,
     data.employee_name,
@@ -47,9 +52,14 @@ function saveReceipt(data) {
     data.pdf_path || null,
     data.telegram_user_id || null,
     data.payment_method || 'pix',
+    extraDataStr
   ]);
 
-  return db.get('SELECT * FROM receipts WHERE receipt_number = ?', [receiptNumber]);
+  const row = db.get('SELECT * FROM receipts WHERE receipt_number = ?', [receiptNumber]);
+  if (row && row.extra_data) {
+    try { row.extra_data_parsed = JSON.parse(row.extra_data); } catch (e) {}
+  }
+  return row;
 }
 
 function getReceiptByNumber(receiptNumber) {

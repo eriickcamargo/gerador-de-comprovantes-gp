@@ -15,6 +15,10 @@ const STATES = {
   AWAITING_EMPRESA_ADDRESS: 'AWAITING_EMPRESA_ADDRESS',
   AWAITING_EXTRATO_PERIOD: 'AWAITING_EXTRATO_PERIOD',         // aguardando mês/ano
   AWAITING_EXTRATO_EMPLOYEE: 'AWAITING_EXTRATO_EMPLOYEE',     // aguardando seleção do funcionário
+  AWAITING_FERIAS_AQUISITIVO: 'AWAITING_FERIAS_AQUISITIVO',   // aguardando período aquisitivo de férias
+  AWAITING_FERIAS_GOZO: 'AWAITING_FERIAS_GOZO',               // aguardando período de gozo de férias
+  AWAITING_DECIMO_PARCELA: 'AWAITING_DECIMO_PARCELA',         // aguardando parcela do 13º
+  AWAITING_DECIMO_ANO: 'AWAITING_DECIMO_ANO',                 // aguardando ano de referência do 13º
   // ─── Fluxo de pagamento em dinheiro ───
   AWAITING_DINHEIRO_NAME: 'AWAITING_DINHEIRO_NAME',           // aguardando nome do funcionário
   AWAITING_DINHEIRO_CARGO: 'AWAITING_DINHEIRO_CARGO',         // cargo (funcionário novo)

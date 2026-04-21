@@ -93,6 +93,7 @@ function buildReceiptHTML(data) {
     transactionId,
     bankName,
     paymentMethod, // 'pix' | 'dinheiro'
+    extraData,
   } = data;
 
   const isDinheiro = paymentMethod === 'dinheiro';
@@ -121,6 +122,30 @@ function buildReceiptHTML(data) {
         ${paymentDate ? `<tr><td class="label">Data do pagamento:</td><td>${paymentDate}</td></tr>` : ''}
       </table>
     </div>` : '';
+
+  let pagamentoReferencia = `<strong> ${valeType}</strong>`;
+  let extraInfoBlock = '';
+
+  if (valeType === 'Férias' && extraData) {
+    extraInfoBlock = `
+    <div class="pix-box" style="border-left-color:#3498db;">
+      <h3 style="color:#2980b9;">🏖️ Detalhes das Férias</h3>
+      <table>
+        ${extraData.periodoAquisitivo ? `<tr><td class="label">Período Aquisitivo:</td><td>${extraData.periodoAquisitivo}</td></tr>` : ''}
+        ${extraData.periodoGozo ? `<tr><td class="label">Período de Gozo:</td><td>${extraData.periodoGozo}</td></tr>` : ''}
+      </table>
+    </div>`;
+    pagamentoReferencia = `<strong> Férias (com 1/3 Constitucional)</strong>`;
+  } else if (valeType === '13º Salário' && extraData) {
+    extraInfoBlock = `
+    <div class="pix-box" style="border-left-color:#e74c3c;">
+      <h3 style="color:#c0392b;">🎁 Detalhes do 13º Salário</h3>
+      <table>
+        ${extraData.anoBase ? `<tr><td class="label">Ano de Referência:</td><td>${extraData.anoBase}</td></tr>` : ''}
+      </table>
+    </div>`;
+    pagamentoReferencia = `<strong> ${extraData.parcelaDecimo ? extraData.parcelaDecimo + ' do ' : ''}13º Salário</strong>`;
+  }
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -295,12 +320,14 @@ function buildReceiptHTML(data) {
       ${companyCnpj ? `, inscrita no CNPJ sob o nº <strong>${companyCnpj}</strong>,` : ','}
       a importância de <strong>${amount}</strong>
       (<em>${amountExtenso}</em>), referente ao pagamento de
-      <strong> ${valeType}</strong> do(a) funcionário(a)
+      ${pagamentoReferencia} do(a) funcionário(a)
       <strong>${employeeName}</strong>,
       ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
       ${setor ? `setor <strong>${setor}</strong>,` : ''}
       ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}
     </p>
+
+    ${extraInfoBlock}
 
     ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
     <div class="pix-box">
@@ -349,12 +376,14 @@ function buildReceiptHTML(data) {
       ${companyCnpj ? `, inscrita no CNPJ sob o nº <strong>${companyCnpj}</strong>,` : ','}
       a importância de <strong>${amount}</strong>
       (<em>${amountExtenso}</em>), referente ao pagamento de
-      <strong> ${valeType}</strong> do(a) funcionário(a)
+      ${pagamentoReferencia} do(a) funcionário(a)
       <strong>${employeeName}</strong>,
       ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
       ${setor ? `setor <strong>${setor}</strong>,` : ''}
       ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}
     </p>
+
+    ${extraInfoBlock}
 
     ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
     <div class="pix-box">
