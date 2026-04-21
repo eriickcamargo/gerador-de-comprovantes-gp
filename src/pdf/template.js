@@ -130,7 +130,7 @@ function buildReceiptHTML(data) {
   <style>
     @page {
       size: A4;
-      margin: 15mm 18mm;
+      margin: 10mm 15mm;
     }
     * {
       margin: 0;
@@ -139,7 +139,7 @@ function buildReceiptHTML(data) {
     }
     body {
       font-family: 'Arial', sans-serif;
-      font-size: 11pt;
+      font-size: 10pt;
       color: #1a1a1a;
       background: white;
     }
@@ -147,7 +147,7 @@ function buildReceiptHTML(data) {
     /* ─── RECIBO (ocupa metade da folha A4) ─── */
     .receipt-block {
       width: 100%;
-      padding: 10mm 0;
+      padding: 4mm 0;
       page-break-inside: avoid;
     }
 
@@ -155,13 +155,13 @@ function buildReceiptHTML(data) {
     .divider {
       border: none;
       border-top: 2px dashed #555;
-      margin: 4mm 0;
+      margin: 2mm 0;
     }
     .divider-label {
       text-align: center;
-      font-size: 8pt;
+      font-size: 7.5pt;
       color: #555;
-      margin: 2mm 0;
+      margin: 1mm 0;
     }
 
     /* Cabeçalho */
@@ -169,40 +169,40 @@ function buildReceiptHTML(data) {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 6mm;
-      padding-bottom: 4mm;
+      margin-bottom: 3mm;
+      padding-bottom: 2mm;
       border-bottom: 2px solid #1a1a1a;
     }
     .company-info h1 {
-      font-size: 14pt;
+      font-size: 12pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     .company-info p {
-      font-size: 9pt;
+      font-size: 8pt;
       color: #555;
-      margin-top: 2px;
+      margin-top: 1px;
     }
     .receipt-meta {
       text-align: right;
     }
     .receipt-meta .receipt-title {
-      font-size: 13pt;
+      font-size: 11pt;
       font-weight: 700;
       text-transform: uppercase;
       color: #1a1a1a;
     }
     .receipt-meta .receipt-number {
-      font-size: 10pt;
+      font-size: 9pt;
       color: #444;
-      margin-top: 3px;
+      margin-top: 2px;
     }
 
     /* Corpo do recibo */
     .body-text {
-      line-height: 1.8;
-      margin: 5mm 0;
+      line-height: 1.6;
+      margin: 3mm 0;
       text-align: justify;
     }
     .body-text strong {
@@ -215,23 +215,23 @@ function buildReceiptHTML(data) {
       border: 1px solid #ccc;
       border-left: 4px solid #00b386;
       border-radius: 4px;
-      padding: 3mm 5mm;
-      margin: 4mm 0;
-      font-size: 9.5pt;
+      padding: 2mm 4mm;
+      margin: 2mm 0;
+      font-size: 9pt;
     }
     .pix-box h3 {
-      font-size: 9pt;
+      font-size: 8.5pt;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: #00b386;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
     }
     .pix-box table {
       width: 100%;
       border-collapse: collapse;
     }
     .pix-box td {
-      padding: 1.5px 4px;
+      padding: 1px 4px;
       vertical-align: top;
     }
     .pix-box td.label {
@@ -244,8 +244,8 @@ function buildReceiptHTML(data) {
     .signatures {
       display: flex;
       justify-content: space-between;
-      margin-top: 10mm;
-      gap: 15mm;
+      margin-top: 5mm;
+      gap: 10mm;
     }
     .sig-block {
       flex: 1;
@@ -253,24 +253,24 @@ function buildReceiptHTML(data) {
     }
     .sig-line {
       border-top: 1px solid #1a1a1a;
-      padding-top: 3px;
-      margin-top: 14mm;
-      font-size: 9pt;
+      padding-top: 2px;
+      margin-top: 8mm;
+      font-size: 8.5pt;
     }
     .sig-block .sig-name {
       font-weight: 700;
-      font-size: 9.5pt;
+      font-size: 9pt;
     }
     .sig-block .sig-role {
-      font-size: 8.5pt;
+      font-size: 8pt;
       color: #555;
     }
 
     .date-line {
       text-align: right;
-      font-size: 9pt;
+      font-size: 8.5pt;
       color: #555;
-      margin-top: 3mm;
+      margin-top: 2mm;
     }
   </style>
 </head>
