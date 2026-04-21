@@ -13,8 +13,16 @@ const STATES = {
   AWAITING_EMPRESA_NAME: 'AWAITING_EMPRESA_NAME',
   AWAITING_EMPRESA_CNPJ: 'AWAITING_EMPRESA_CNPJ',
   AWAITING_EMPRESA_ADDRESS: 'AWAITING_EMPRESA_ADDRESS',
-  AWAITING_EXTRATO_PERIOD: 'AWAITING_EXTRATO_PERIOD',     // aguardando mês/ano
-  AWAITING_EXTRATO_EMPLOYEE: 'AWAITING_EXTRATO_EMPLOYEE', // aguardando seleção do funcionário
+  AWAITING_EXTRATO_PERIOD: 'AWAITING_EXTRATO_PERIOD',         // aguardando mês/ano
+  AWAITING_EXTRATO_EMPLOYEE: 'AWAITING_EXTRATO_EMPLOYEE',     // aguardando seleção do funcionário
+  // ─── Fluxo de pagamento em dinheiro ───
+  AWAITING_DINHEIRO_NAME: 'AWAITING_DINHEIRO_NAME',           // aguardando nome do funcionário
+  AWAITING_DINHEIRO_CARGO: 'AWAITING_DINHEIRO_CARGO',         // cargo (funcionário novo)
+  AWAITING_DINHEIRO_SETOR: 'AWAITING_DINHEIRO_SETOR',         // setor (funcionário novo)
+  AWAITING_DINHEIRO_VALOR: 'AWAITING_DINHEIRO_VALOR',         // valor pago
+  AWAITING_DINHEIRO_DATA: 'AWAITING_DINHEIRO_DATA',           // data do pagamento
+  AWAITING_DINHEIRO_VALE: 'AWAITING_DINHEIRO_VALE',           // tipo de vale
+  AWAITING_DINHEIRO_OUTRO_VALE: 'AWAITING_DINHEIRO_OUTRO_VALE', // tipo de vale livre
 };
 
 // Map de userId -> { state, data }

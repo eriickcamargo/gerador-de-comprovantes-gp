@@ -27,8 +27,8 @@ function saveReceipt(data) {
     INSERT INTO receipts (
       receipt_number, employee_name, cargo, setor, amount, vale_type,
       payment_date, payment_time, pix_key, agencia_conta, transaction_id,
-      bank_name, company_name, company_cnpj, pdf_path, telegram_user_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      bank_name, company_name, company_cnpj, pdf_path, telegram_user_id, payment_method
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     receiptNumber,
     data.employee_name,
@@ -46,6 +46,7 @@ function saveReceipt(data) {
     data.company_cnpj || null,
     data.pdf_path || null,
     data.telegram_user_id || null,
+    data.payment_method || 'pix',
   ]);
 
   return db.get('SELECT * FROM receipts WHERE receipt_number = ?', [receiptNumber]);

@@ -92,7 +92,10 @@ function buildReceiptHTML(data) {
     agenciaConta,
     transactionId,
     bankName,
+    paymentMethod, // 'pix' | 'dinheiro'
   } = data;
+
+  const isDinheiro = paymentMethod === 'dinheiro';
 
   const amountExtenso = valorPorExtenso(amount || '');
   const today = new Date().toLocaleDateString('pt-BR', {
@@ -102,11 +105,22 @@ function buildReceiptHTML(data) {
   });
 
   const pixInfo = [];
-  if (pixKey) pixInfo.push(`<tr><td class="label">Chave PIX:</td><td>${pixKey}</td></tr>`);
-  if (agenciaConta) pixInfo.push(`<tr><td class="label">Agência / Conta:</td><td>${agenciaConta}</td></tr>`);
-  if (bankName) pixInfo.push(`<tr><td class="label">Banco:</td><td>${bankName}</td></tr>`);
-  if (paymentDate) pixInfo.push(`<tr><td class="label">Data do PIX:</td><td>${paymentDate}${paymentTime ? ' às ' + paymentTime : ''}</td></tr>`);
-  if (transactionId) pixInfo.push(`<tr><td class="label">ID da Transação:</td><td style="word-break:break-all;font-size:9pt;">${transactionId}</td></tr>`);
+  if (!isDinheiro) {
+    if (pixKey) pixInfo.push(`<tr><td class="label">Chave PIX:</td><td>${pixKey}</td></tr>`);
+    if (agenciaConta) pixInfo.push(`<tr><td class="label">Agência / Conta:</td><td>${agenciaConta}</td></tr>`);
+    if (bankName) pixInfo.push(`<tr><td class="label">Banco:</td><td>${bankName}</td></tr>`);
+    if (paymentDate) pixInfo.push(`<tr><td class="label">Data do PIX:</td><td>${paymentDate}${paymentTime ? ' às ' + paymentTime : ''}</td></tr>`);
+    if (transactionId) pixInfo.push(`<tr><td class="label">ID da Transação:</td><td style="word-break:break-all;font-size:9pt;">${transactionId}</td></tr>`);
+  }
+
+  // Bloco de pagamento em dinheiro
+  const dinheiroBlock = isDinheiro ? `
+    <div class="pix-box" style="border-left-color:#e6a817;">
+      <h3 style="color:#c47e00;">💵 Pagamento em Dinheiro</h3>
+      <table>
+        ${paymentDate ? `<tr><td class="label">Data do pagamento:</td><td>${paymentDate}</td></tr>` : ''}
+      </table>
+    </div>` : '';
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -285,14 +299,14 @@ function buildReceiptHTML(data) {
       <strong>${employeeName}</strong>,
       ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
       ${setor ? `setor <strong>${setor}</strong>,` : ''}
-      realizado via PIX conforme comprovante abaixo.
+      ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}
     </p>
 
-    ${pixInfo.length > 0 ? `
+    ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
     <div class="pix-box">
       <h3>✓ Pagamento via PIX</h3>
       <table>${pixInfo.join('')}</table>
-    </div>` : ''}
+    </div>` : '')}
 
     <div class="signatures">
       <div class="sig-block">
@@ -339,14 +353,14 @@ function buildReceiptHTML(data) {
       <strong>${employeeName}</strong>,
       ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
       ${setor ? `setor <strong>${setor}</strong>,` : ''}
-      realizado via PIX conforme comprovante abaixo.
+      ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}
     </p>
 
-    ${pixInfo.length > 0 ? `
+    ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
     <div class="pix-box">
       <h3>✓ Pagamento via PIX</h3>
       <table>${pixInfo.join('')}</table>
-    </div>` : ''}
+    </div>` : '')}
 
     <div class="signatures">
       <div class="sig-block">

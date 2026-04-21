@@ -15,6 +15,18 @@ const TEMP_DIR = path.join(__dirname, '../../temp');
 const VALE_TYPES = ['Alimentação', 'Transporte', 'Refeição', 'Combustível', 'Adiantamento Salarial', 'Outro'];
 
 /**
+ * Retorna a data de hoje formatada como DD/MM/AAAA
+ */
+function todayBR() {
+  return new Date().toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+/**
  * Escapa caracteres especiais do Markdown do Telegram (modo legacy).
  * Evita quebra de parsing ao inserir valores dinâmicos extraídos de documentos.
  */
@@ -50,6 +62,26 @@ function valeKeyboard() {
       ],
       [{ text: '💰 Adiantamento Salarial', callback_data: 'vale_Adiantamento Salarial' }],
       [{ text: '📋 Outro (digitar)', callback_data: 'vale_outro' }],
+    ],
+  };
+}
+
+/**
+ * Teclado inline para seleção de tipo de vale no fluxo dinheiro
+ */
+function valeKeyboardDinheiro() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '🍽️ Alimentação', callback_data: 'dvale_Alimentação' },
+        { text: '🚌 Transporte',  callback_data: 'dvale_Transporte' },
+      ],
+      [
+        { text: '🍴 Refeição',    callback_data: 'dvale_Refeição' },
+        { text: '⛽ Combustível',  callback_data: 'dvale_Combustível' },
+      ],
+      [{ text: '💰 Adiantamento Salarial', callback_data: 'dvale_Adiantamento Salarial' }],
+      [{ text: '📋 Outro (digitar)', callback_data: 'dvale_outro' }],
     ],
   };
 }
@@ -254,8 +286,88 @@ async function finishAndSendReceipt(bot, chatId, userId) {
 }
 
 /**
- * Inicializa o bot e registra todos os handlers
+ * Gera e envia o PDF do recibo de pagamento em dinheiro
  */
+async function finishAndSendCashReceipt(bot, chatId, userId) {
+  const data = getData(userId);
+  const employee = data.dinheiroEmployee || {};
+  const company = getCompany() || {};
+
+  setState(userId, STATES.PROCESSING);
+
+  try {
+    await bot.sendMessage(chatId, '⏳ Gerando o PDF do recibo...');
+
+    const receiptData = {
+      companyName:    company.name    || 'EMPRESA',
+      companyCnpj:    company.cnpj    || '',
+      companyAddress: company.address || '',
+      employeeName:   data.dinheiroName,
+      cargo:          employee.cargo  || data.dinheiroCargo || '',
+      setor:          employee.setor  || data.dinheiroSetor || '',
+      amount:         data.dinheiroValor,
+      valeType:       data.dinheiroValeType,
+      paymentDate:    data.dinheiroData,
+      paymentMethod:  'dinheiro',
+    };
+
+    const savedReceipt = saveReceipt({
+      employee_name:    receiptData.employeeName,
+      cargo:            receiptData.cargo,
+      setor:            receiptData.setor,
+      amount:           receiptData.amount,
+      vale_type:        receiptData.valeType,
+      payment_date:     receiptData.paymentDate,
+      payment_method:   'dinheiro',
+      company_name:     receiptData.companyName,
+      company_cnpj:     receiptData.companyCnpj,
+      telegram_user_id: String(userId),
+    });
+
+    receiptData.receiptNumber = savedReceipt.receipt_number;
+
+    const pdfPath = await generatePDF(receiptData, savedReceipt.receipt_number);
+
+    // Salva funcionário se for novo
+    if (!employee.id) {
+      saveEmployee({
+        name:  data.dinheiroName,
+        cargo: data.dinheiroCargo,
+        setor: data.dinheiroSetor,
+      });
+    }
+
+    await bot.sendDocument(
+      chatId,
+      fs.createReadStream(pdfPath),
+      {
+        caption:
+          `✅ *Recibo Nº ${savedReceipt.receipt_number}*\n` +
+          `👤 ${receiptData.employeeName}\n` +
+          `💵 ${receiptData.amount} — Vale ${receiptData.valeType}\n` +
+          `💵 Pagamento em dinheiro\n` +
+          `📅 ${receiptData.paymentDate}`,
+        parse_mode: 'Markdown',
+      },
+      {
+        filename: `recibo-${savedReceipt.receipt_number}.pdf`,
+        contentType: 'application/pdf',
+      }
+    );
+
+    cleanupFile(pdfPath);
+    resetConversation(userId);
+    await bot.sendMessage(
+      chatId,
+      '✅ Recibo em dinheiro emitido com sucesso!\n\nEnvie um comprovante PIX ou use /dinheiro para emitir outro.'
+    );
+  } catch (err) {
+    console.error('Erro ao gerar recibo dinheiro:', err);
+    setState(userId, STATES.IDLE);
+    bot.sendMessage(chatId, `❌ Erro ao gerar o recibo: ${err.message}`);
+  }
+}
+
 function startBot() {
   const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
   console.log('🤖 Bot Telegram iniciado (polling)');
@@ -270,15 +382,45 @@ function startBot() {
       `👋 *Olá! Sou o bot de emissão de recibos de vale via PIX.*\n\n` +
       `📋 *Como usar:*\n` +
       `1. Configure os dados da empresa com /empresa\n` +
-      `2. Envie a foto ou PDF do comprovante PIX\n` +
+      `2. Envie a foto ou PDF do comprovante PIX — *ou* use /dinheiro para pagamento em dinheiro\n` +
       `3. Responda as perguntas do bot\n` +
       `4. Receba o PDF do recibo pronto para imprimir!\n\n` +
       `📌 *Comandos disponíveis:*\n` +
       `/empresa — Configurar dados da empresa\n` +
+      `/dinheiro — Emitir recibo de pagamento em dinheiro\n` +
       `/historico [Qtd] — Ver últimos recibos (ex: /historico 20)\n` +
       `/buscar Nome — Buscar recibos de um funcionário\n` +
       `/extrato — Gerar extrato mensal de um funcionário\n` +
       `/cancelar — Cancelar operação atual`,
+      { parse_mode: 'Markdown' }
+    );
+  });
+
+  // ─── /dinheiro ──────────────────────────────────────────────────────────
+  bot.onText(/\/dinheiro/, (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAllowed(userId)) return;
+
+    const state = getState(userId);
+    if (state !== STATES.IDLE) {
+      return bot.sendMessage(chatId,
+        '⚠️ Há uma operação em andamento.\nUse /cancelar para recomecar.');
+    }
+
+    const company = getCompany();
+    if (!company || !company.name) {
+      return bot.sendMessage(chatId,
+        '⚠️ Você ainda não configurou os dados da empresa.\n' +
+        'Use /empresa primeiro.');
+    }
+
+    resetConversation(userId);
+    setState(userId, STATES.AWAITING_DINHEIRO_NAME);
+    bot.sendMessage(
+      chatId,
+      '💵 *Recibo de Pagamento em Dinheiro*\n\n' +
+      'Digite o *nome completo* do funcionário:',
       { parse_mode: 'Markdown' }
     );
   });
@@ -305,7 +447,7 @@ function startBot() {
     const chatId = msg.chat.id;
     if (!isAllowed(msg.from.id)) return;
     resetConversation(msg.from.id);
-    bot.sendMessage(chatId, '❌ Operação cancelada. Envie um comprovante quando quiser.');
+    bot.sendMessage(chatId, '❌ Operação cancelada. Envie um comprovante PIX ou use /dinheiro.');
   });
 
   // ─── /historico ───────────────────────────────────────────────────────────
@@ -393,6 +535,7 @@ function startBot() {
         agenciaConta: receipt.agencia_conta,
         transactionId: receipt.transaction_id,
         bankName: receipt.bank_name,
+        paymentMethod: receipt.payment_method || 'pix',
       };
 
       const pdfPath = await generatePDF(receiptData, receipt.receipt_number);
@@ -598,11 +741,115 @@ function startBot() {
         break;
       }
 
+      // ─── Fluxo de pagamento em dinheiro ───────────────────────────────────
+
+      case STATES.AWAITING_DINHEIRO_NAME: {
+        const name = msg.text.trim();
+        if (name.length < 2) {
+          return bot.sendMessage(chatId, '⚠️ Digite um nome válido com pelo menos 2 caracteres.');
+        }
+        setData(userId, 'dinheiroName', name);
+
+        // Tenta achar o funcionário no banco
+        const emp = findEmployee(name);
+        if (emp) {
+          setData(userId, 'dinheiroEmployee', emp);
+          setState(userId, STATES.AWAITING_DINHEIRO_VALOR);
+          bot.sendMessage(
+            chatId,
+            `ℹ️ *Funcionário reconhecido!*\n` +
+            `Cargo: *${escapeMd(emp.cargo)}* | Setor: *${escapeMd(emp.setor)}*\n\n` +
+            `Digite o *valor* pago em dinheiro (ex: R$ 150,00):`,
+            { parse_mode: 'Markdown' }
+          );
+        } else {
+          setData(userId, 'dinheiroEmployee', {});
+          setState(userId, STATES.AWAITING_DINHEIRO_CARGO);
+          bot.sendMessage(
+            chatId,
+            `👤 Funcionário *${escapeMd(name)}* não encontrado.\n\n` +
+            `Qual é o *cargo* deste funcionário?`,
+            { parse_mode: 'Markdown' }
+          );
+        }
+        break;
+      }
+
+      case STATES.AWAITING_DINHEIRO_CARGO: {
+        setData(userId, 'dinheiroCargo', msg.text.trim());
+        setState(userId, STATES.AWAITING_DINHEIRO_SETOR);
+        bot.sendMessage(chatId,
+          `✅ Cargo: *${escapeMd(msg.text.trim())}*\n\nQual é o *setor* deste funcionário?`,
+          { parse_mode: 'Markdown' });
+        break;
+      }
+
+      case STATES.AWAITING_DINHEIRO_SETOR: {
+        setData(userId, 'dinheiroSetor', msg.text.trim());
+        setState(userId, STATES.AWAITING_DINHEIRO_VALOR);
+        bot.sendMessage(chatId,
+          `✅ Setor: *${escapeMd(msg.text.trim())}*\n\nDigite o *valor* pago em dinheiro (ex: R$ 150,00):`,
+          { parse_mode: 'Markdown' });
+        break;
+      }
+
+      case STATES.AWAITING_DINHEIRO_VALOR: {
+        const raw = msg.text.trim();
+        // Aceita formatos: 150, 150.00, 150,00, R$ 150,00
+        const cleaned = raw.replace('R$', '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+        const parsed = parseFloat(cleaned);
+        if (isNaN(parsed) || parsed <= 0) {
+          return bot.sendMessage(chatId, '⚠️ Valor inválido. Tente novamente (ex: R$ 150,00).');
+        }
+        const valor = `R$ ${parsed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        setData(userId, 'dinheiroValor', valor);
+        setState(userId, STATES.AWAITING_DINHEIRO_DATA);
+
+        const hoje = todayBR();
+        bot.sendMessage(
+          chatId,
+          `✅ Valor: *${escapeMd(valor)}*\n\n` +
+          `📅 Qual é a *data* do pagamento?\n` +
+          `Envie no formato DD/MM/AAAA ou escreva *hoje* para usar ${escapeMd(hoje)}:`,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
+
+      case STATES.AWAITING_DINHEIRO_DATA: {
+        const dateRaw = msg.text.trim().toLowerCase();
+        let dateValue;
+        if (dateRaw === 'hoje') {
+          dateValue = todayBR();
+        } else {
+          if (!/^\d{2}\/\d{2}\/\d{4}$/.test(msg.text.trim())) {
+            return bot.sendMessage(chatId,
+              '⚠️ Formato inválido. Use DD/MM/AAAA ou escreva *hoje*.',
+              { parse_mode: 'Markdown' });
+          }
+          dateValue = msg.text.trim();
+        }
+        setData(userId, 'dinheiroData', dateValue);
+        setState(userId, STATES.AWAITING_DINHEIRO_VALE);
+        bot.sendMessage(
+          chatId,
+          `✅ Data: *${escapeMd(dateValue)}*\n\nSelecione o *tipo de vale:*`,
+          { parse_mode: 'Markdown', reply_markup: valeKeyboardDinheiro() }
+        );
+        break;
+      }
+
+      case STATES.AWAITING_DINHEIRO_OUTRO_VALE: {
+        setData(userId, 'dinheiroValeType', msg.text.trim());
+        await finishAndSendCashReceipt(bot, chatId, userId);
+        break;
+      }
+
       default: {
         if (state === STATES.IDLE) {
           bot.sendMessage(
             chatId,
-            '📎 Envie uma foto ou PDF do comprovante PIX para começar.\n\nUse /start para ver a lista de comandos.'
+            '📎 Envie uma foto ou PDF do comprovante PIX para começar.\n\nOu use /dinheiro para emitir um recibo de pagamento em dinheiro.\n\nUse /start para ver a lista de comandos.'
           );
         }
         break;
@@ -685,6 +932,28 @@ function startBot() {
       }
 
       resetConversation(userId);
+      return;
+    }
+
+    if (query.data.startsWith('dvale_')) {
+      const state = getState(userId);
+      if (state !== STATES.AWAITING_DINHEIRO_VALE) return;
+
+      const valeType = query.data.replace('dvale_', '');
+
+      if (valeType === 'outro') {
+        setState(userId, STATES.AWAITING_DINHEIRO_OUTRO_VALE);
+        bot.sendMessage(chatId, '📝 Digite o tipo de vale:');
+        return;
+      }
+
+      setData(userId, 'dinheiroValeType', valeType);
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      await bot.sendMessage(chatId, `✅ Tipo selecionado: *Vale ${escapeMd(valeType)}*`, { parse_mode: 'Markdown' });
+      await finishAndSendCashReceipt(bot, chatId, userId);
       return;
     }
 
