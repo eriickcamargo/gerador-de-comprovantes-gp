@@ -98,14 +98,6 @@ O bot usa SQLite via `sql.js`. O arquivo `db/data.sqlite` é persistido em disco
 └── .env.example
 ```
 
-## ChefStock Bot
-
-O repositório também contém o `chefstock-bot`, um serviço independente que monitora o estoque do sistema ChefStock (Firebase Firestore) e envia alertas pelo Telegram quando algum item atinge o nível mínimo.
-
-Para usá-lo, coloque o arquivo `serviceAccount.json` do Firebase em `chefstock-bot/` e suba junto com o `docker compose up`.
-
-O bot do ChefStock não usa `.env` — a configuração (token, chatId, bot ativo) é lida em tempo real do Firestore na coleção `configuracoes/geral`.
-
 ## Observações
 
 - Imagens suportadas: JPG, PNG, WEBP e PDF
