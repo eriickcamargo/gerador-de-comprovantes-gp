@@ -1,0 +1,8 @@
+node_modules/
+.env
+db/
+temp/*.pdf
+temp/*.jpg
+temp/*.jpeg
+temp/*.png
+*.sqlite

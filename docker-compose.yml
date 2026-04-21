@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: comprovantes-pix-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Monta o banco de dados local para manter os dados mesmo se o contêiner for recriado
+      - ./db:/app/db
