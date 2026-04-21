@@ -94,6 +94,10 @@ async function initDB() {
     db.run(`ALTER TABLE employees ADD COLUMN cpf TEXT`);
   } catch (_) { }
 
+  try {
+    db.run(`ALTER TABLE receipts ADD COLUMN status TEXT DEFAULT 'active'`);
+  } catch (_) { }
+
   persist();
   console.log('✅ Banco de dados inicializado em:', DB_PATH);
 }

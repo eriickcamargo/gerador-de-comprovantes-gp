@@ -7,7 +7,7 @@ const { extractFromVoucher } = require('../ai/extractor');
 const { generatePDF, generateStatementPDF, cleanupFile } = require('../pdf/generator');
 const { findEmployee, saveEmployee, listEmployees, deleteEmployee, getEmployeeById } = require('../database/employees');
 const { getCompany, saveCompany } = require('../database/company');
-const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod } = require('../database/receipts');
+const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, cancelReceiptByNumber } = require('../database/receipts');
 const { STATES, getState, setState, getData, setData, resetConversation } = require('./conversations');
 
 const TEMP_DIR = path.join(__dirname, '../../temp');
@@ -414,6 +414,7 @@ function startBot() {
       `/historico [Qtd] — Ver últimos recibos (ex: /historico 20)\n` +
       `/buscar Nome — Buscar recibos de um funcionário\n` +
       `/extrato — Gerar extrato mensal de um funcionário\n` +
+      `/cancelar_recibo NUMERO — Cancelar um recibo emitido (ex: /cancelar_recibo 202604-001)\n` +
       `/cancelar — Cancelar operação atual`,
       { parse_mode: 'Markdown' }
     );
@@ -466,11 +467,39 @@ function startBot() {
   });
 
   // ─── /cancelar ────────────────────────────────────────────────────────────
-  bot.onText(/\/cancelar/, (msg) => {
+  bot.onText(/\/cancelar$/, (msg) => {
     const chatId = msg.chat.id;
     if (!isAllowed(msg.from.id)) return;
     resetConversation(msg.from.id);
     bot.sendMessage(chatId, '❌ Operação cancelada. Envie um comprovante PIX ou use /dinheiro.');
+  });
+
+  // ─── /cancelar_recibo ──────────────────────────────────────────────────────
+  bot.onText(/\/cancelar_recibo (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    if (!isAllowed(msg.from.id)) return;
+
+    const receiptNumber = match[1].trim();
+    const receipt = getReceiptByNumber(receiptNumber);
+
+    if (!receipt) {
+      return bot.sendMessage(chatId, `❌ Recibo *${receiptNumber}* não encontrado.`, { parse_mode: 'Markdown' });
+    }
+
+    if (receipt.status === 'cancelled') {
+      return bot.sendMessage(chatId, `⚠️ O recibo *${receiptNumber}* já está cancelado.`, { parse_mode: 'Markdown' });
+    }
+
+    cancelReceiptByNumber(receiptNumber);
+    bot.sendMessage(
+      chatId,
+      `🚫 *Recibo Cancelado com Sucesso!*\n\n` +
+      `Recibo: *${receiptNumber}*\n` +
+      `Funcionário: ${receipt.employee_name}\n` +
+      `Valor: ${receipt.amount}\n\n` +
+      `O recibo não foi apagado do banco de dados, mas agora consta como cancelado no histórico e extrato.`,
+      { parse_mode: 'Markdown' }
+    );
   });
 
   // ─── /historico ───────────────────────────────────────────────────────────
@@ -491,8 +520,11 @@ function startBot() {
 
     let text = `📋 *Últimos ${receipts.length} recibos:*\n\n`;
     receipts.forEach((r, i) => {
-      text += `${i + 1}. *${r.receipt_number}* — ${r.employee_name}\n`;
-      text += `   💰 ${r.amount} | 🏷️ Vale ${r.vale_type} | 📅 ${r.payment_date}\n\n`;
+      const isCancelled = r.status === 'cancelled';
+      const statusLabel = isCancelled ? ' 🚫 *(CANCELADO)*' : '';
+      const amountLabel = isCancelled ? `~${r.amount}~` : r.amount;
+      text += `${i + 1}. *${r.receipt_number}* — ${r.employee_name}${statusLabel}\n`;
+      text += `   💰 ${amountLabel} | 🏷️ Vale ${r.vale_type} | 📅 ${r.payment_date}\n\n`;
     });
 
     text += `Para reenviar um recibo, use:\n/recibo NUMERO (ex: /recibo 202604-001)`;
@@ -517,8 +549,11 @@ function startBot() {
 
     let text = `🔍 *Resultados para "${searchQuery}":*\nEncontrados ${receipts.length} recibos recentes.\n\n`;
     receipts.forEach((r) => {
-      text += `*${r.receipt_number}* — ${r.employee_name}\n`;
-      text += `💰 ${r.amount} | 📅 ${r.payment_date}\n\n`;
+      const isCancelled = r.status === 'cancelled';
+      const statusLabel = isCancelled ? ' 🚫 *(CANCELADO)*' : '';
+      const amountLabel = isCancelled ? `~${r.amount}~` : r.amount;
+      text += `*${r.receipt_number}* — ${r.employee_name}${statusLabel}\n`;
+      text += `💰 ${amountLabel} | 📅 ${r.payment_date}\n\n`;
     });
 
     text += `Use /recibo NUMERO para baixar o PDF.`;
@@ -562,11 +597,13 @@ function startBot() {
       };
 
       const pdfPath = await generatePDF(receiptData, receipt.receipt_number);
+      const isCancelled = receipt.status === 'cancelled';
+      const statusLabel = isCancelled ? ' 🚫 *(CANCELADO)*' : '';
       await bot.sendDocument(
         chatId,
         fs.createReadStream(pdfPath),
         {
-          caption: `✅ Recibo *${receiptNumber}* — ${receipt.employee_name}`,
+          caption: `✅ Recibo *${receiptNumber}* — ${receipt.employee_name}${statusLabel}`,
           parse_mode: 'Markdown',
         },
         {

@@ -32,8 +32,8 @@ function saveReceipt(data) {
     INSERT INTO receipts (
       receipt_number, employee_name, cargo, setor, amount, vale_type,
       payment_date, payment_time, pix_key, agencia_conta, transaction_id,
-      bank_name, company_name, company_cnpj, pdf_path, telegram_user_id, payment_method, extra_data
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      bank_name, company_name, company_cnpj, pdf_path, telegram_user_id, payment_method, extra_data, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
   `, [
     receiptNumber,
     data.employee_name,
@@ -95,6 +95,11 @@ function getReceiptsByEmployeeAndPeriod(employeeName, month, year) {
   );
 }
 
+function cancelReceiptByNumber(receiptNumber) {
+  db.run(`UPDATE receipts SET status = 'cancelled' WHERE receipt_number = ?`, [receiptNumber]);
+  return getReceiptByNumber(receiptNumber);
+}
+
 module.exports = {
   generateReceiptNumber,
   saveReceipt,
@@ -102,4 +107,5 @@ module.exports = {
   listReceipts,
   searchReceiptsByEmployee,
   getReceiptsByEmployeeAndPeriod,
+  cancelReceiptByNumber,
 };

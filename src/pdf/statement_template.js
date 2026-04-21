@@ -54,31 +54,38 @@ function buildStatementHTML(data, receipts) {
   });
 
   // Linhas da tabela de recibos
-  const rows = receipts.map((r, i) => `
-    <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
-      <td>${r.receipt_number}</td>
+  const rows = receipts.map((r, i) => {
+    const isCancelled = r.status === 'cancelled';
+    const amountHtml = isCancelled ? `<s style="color: #999">${r.amount}</s>` : r.amount;
+    const typeLabel = (r.vale_type || '—') + (isCancelled ? ' <span style="font-size: 8pt; color: #d32f2f; font-weight: bold;">(CANCELADO)</span>' : '');
+    return `
+    <tr class="${i % 2 === 0 ? 'even' : 'odd'}${isCancelled ? ' cancelled' : ''}">
+      <td>${isCancelled ? '<s style="color: #999">' + r.receipt_number + '</s>' : r.receipt_number}</td>
       <td>${r.payment_date || '—'}</td>
-      <td>${r.vale_type || '—'}</td>
-      <td class="amount">${r.amount}</td>
+      <td>${typeLabel}</td>
+      <td class="amount">${amountHtml}</td>
     </tr>
-  `).join('');
+  `}).join('');
 
   // Subtotais por tipo de vale
   const byType = {};
   receipts.forEach(r => {
+    if (r.status === 'cancelled') return;
     const type = r.vale_type || 'Outros';
     byType[type] = (byType[type] || 0) + parseAmount(r.amount);
   });
 
+  const activeReceipts = receipts.filter(r => r.status !== 'cancelled');
+
   const summaryRows = Object.entries(byType).map(([type, total]) => `
     <tr>
       <td>Vale ${type}</td>
-      <td>${receipts.filter(r => r.vale_type === type).length} recibo(s)</td>
+      <td>${activeReceipts.filter(r => r.vale_type === type).length} recibo(s)</td>
       <td class="amount"><strong>${formatAmount(total)}</strong></td>
     </tr>
   `).join('');
 
-  const grandTotal = receipts.reduce((sum, r) => sum + parseAmount(r.amount), 0);
+  const grandTotal = activeReceipts.reduce((sum, r) => sum + parseAmount(r.amount), 0);
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -179,6 +186,7 @@ function buildStatementHTML(data, receipts) {
     td.amount { text-align: right; }
     tr.even { background: white; }
     tr.odd  { background: #fafafa; }
+    tr.cancelled td { color: #999; }
 
     /* ── Resumo ── */
     .summary-table thead th { background: #444; }
