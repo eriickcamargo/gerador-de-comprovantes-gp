@@ -16,20 +16,32 @@ function findEmployee(name) {
   return employee || null;
 }
 
-function saveEmployee({ name, cargo, setor }) {
+function getEmployeeById(id) {
+  return db.get('SELECT * FROM employees WHERE id = ?', [id]) || null;
+}
+
+function saveEmployee({ id, name, cpf, cargo, setor }) {
+  if (id) {
+    db.run(
+      `UPDATE employees SET name = ?, cpf = ?, cargo = ?, setor = ?, updated_at = datetime('now') WHERE id = ?`,
+      [name, cpf, cargo, setor, id]
+    );
+    return;
+  }
+
   const existing = db.get(
     'SELECT id FROM employees WHERE LOWER(name) = LOWER(?)',
     [name]
   );
   if (existing) {
     db.run(
-      `UPDATE employees SET cargo = ?, setor = ?, updated_at = datetime('now') WHERE LOWER(name) = LOWER(?)`,
-      [cargo, setor, name]
+      `UPDATE employees SET cpf = ?, cargo = ?, setor = ?, updated_at = datetime('now') WHERE LOWER(name) = LOWER(?)`,
+      [cpf, cargo, setor, name]
     );
   } else {
     db.run(
-      'INSERT INTO employees (name, cargo, setor) VALUES (?, ?, ?)',
-      [name, cargo, setor]
+      'INSERT INTO employees (name, cpf, cargo, setor) VALUES (?, ?, ?, ?)',
+      [name, cpf, cargo, setor]
     );
   }
 }
@@ -38,4 +50,8 @@ function listEmployees() {
   return db.all('SELECT * FROM employees ORDER BY name');
 }
 
-module.exports = { findEmployee, saveEmployee, listEmployees };
+function deleteEmployee(id) {
+  db.run('DELETE FROM employees WHERE id = ?', [id]);
+}
+
+module.exports = { findEmployee, saveEmployee, listEmployees, getEmployeeById, deleteEmployee };

@@ -90,10 +90,10 @@ function buildReceiptHTML(data) {
     paymentTime,
     pixKey,
     agenciaConta,
-    transactionId,
     bankName,
     paymentMethod, // 'pix' | 'dinheiro'
     extraData,
+    employeeCpf,
   } = data;
 
   const isDinheiro = paymentMethod === 'dinheiro';
@@ -322,6 +322,7 @@ function buildReceiptHTML(data) {
       (<em>${amountExtenso}</em>), referente ao pagamento de
       ${pagamentoReferencia} do(a) funcionário(a)
       <strong>${employeeName}</strong>,
+      ${employeeCpf ? `CPF: <strong>${employeeCpf}</strong>,` : ''}
       ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
       ${setor ? `setor <strong>${setor}</strong>,` : ''}
       ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}
@@ -378,6 +379,7 @@ function buildReceiptHTML(data) {
       (<em>${amountExtenso}</em>), referente ao pagamento de
       ${pagamentoReferencia} do(a) funcionário(a)
       <strong>${employeeName}</strong>,
+      ${employeeCpf ? `CPF: <strong>${employeeCpf}</strong>,` : ''}
       ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
       ${setor ? `setor <strong>${setor}</strong>,` : ''}
       ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}

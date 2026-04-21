@@ -5,10 +5,9 @@ const fs = require('fs');
 
 const { extractFromVoucher } = require('../ai/extractor');
 const { generatePDF, generateStatementPDF, cleanupFile } = require('../pdf/generator');
-const { findEmployee, saveEmployee } = require('../database/employees');
+const { findEmployee, saveEmployee, listEmployees, deleteEmployee, getEmployeeById } = require('../database/employees');
 const { getCompany, saveCompany } = require('../database/company');
 const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod } = require('../database/receipts');
-const { listEmployees } = require('../database/employees');
 const { STATES, getState, setState, getData, setData, resetConversation } = require('./conversations');
 
 const TEMP_DIR = path.join(__dirname, '../../temp');
@@ -175,15 +174,15 @@ async function processVoucher(bot, chatId, userId, filePath) {
       );
       setState(userId, STATES.AWAITING_VALE_TYPE);
     } else {
-      // Funcionário novo — coleta cargo
+      // Funcionário novo — coleta CPF
       await bot.sendMessage(
         chatId,
         `👤 Funcionário *${escapeMd(extracted.nome_beneficiario)}* não encontrado.\n\n` +
-        `Qual é o *cargo* deste funcionário?`,
+        `Qual é o *CPF* deste funcionário? (Ou digite "pular")`,
 
         { parse_mode: 'Markdown' }
       );
-      setState(userId, STATES.AWAITING_CARGO);
+      setState(userId, STATES.AWAITING_CPF);
     }
   } catch (err) {
     console.error('Erro ao processar comprovante:', err);
@@ -257,9 +256,15 @@ async function finishAndSendReceipt(bot, chatId, userId) {
     if (!employee.id) {
       saveEmployee({
         name: extracted.nome_beneficiario,
+        cpf: data.cpf !== 'pular' ? data.cpf : null,
         cargo: data.cargo,
         setor: data.setor,
       });
+      // Busca novamente para pegar o ID e o CPF gravado caso omitido
+      const newEmp = findEmployee(extracted.nome_beneficiario);
+      if (newEmp && newEmp.cpf) receiptData.employeeCpf = newEmp.cpf;
+    } else {
+      receiptData.employeeCpf = employee.cpf;
     }
 
     // Envia o PDF com contentType explícito (evita DeprecationWarning)
@@ -344,9 +349,14 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
     if (!employee.id) {
       saveEmployee({
         name:  data.dinheiroName,
+        cpf:   data.dinheiroCpf !== 'pular' ? data.dinheiroCpf : null,
         cargo: data.dinheiroCargo,
         setor: data.dinheiroSetor,
       });
+      const newEmp = findEmployee(data.dinheiroName);
+      if (newEmp && newEmp.cpf) receiptData.employeeCpf = newEmp.cpf;
+    } else {
+      receiptData.employeeCpf = employee.cpf;
     }
 
     await bot.sendDocument(
@@ -400,6 +410,7 @@ function startBot() {
       `📌 *Comandos disponíveis:*\n` +
       `/empresa — Configurar dados da empresa\n` +
       `/dinheiro — Emitir recibo de pagamento em dinheiro\n` +
+      `/colaboradores — Gerenciar dados dos colaboradores\n` +
       `/historico [Qtd] — Ver últimos recibos (ex: /historico 20)\n` +
       `/buscar Nome — Buscar recibos de um funcionário\n` +
       `/extrato — Gerar extrato mensal de um funcionário\n` +
@@ -593,6 +604,30 @@ function startBot() {
     setState(userId, STATES.AWAITING_EMPRESA_NAME);
   });
 
+  // ─── /colaboradores ───────────────────────────────────────────────────────
+  bot.onText(/\/colaboradores/, (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAllowed(userId)) return;
+
+    resetConversation(userId);
+    bot.sendMessage(
+      chatId,
+      `👥 *Gerenciamento de Colaboradores*\n\nEscolha uma opção abaixo:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '➕ Adicionar Colaborador', callback_data: 'colab_add' }],
+            [{ text: '✏️ Editar Colaborador', callback_data: 'colab_edit' }],
+            [{ text: '❌ Remover Colaborador', callback_data: 'colab_del' }],
+            [{ text: '📋 Listar Colaboradores', callback_data: 'colab_list' }]
+          ]
+        }
+      }
+    );
+  });
+
   // ─── Recebimento de fotos ─────────────────────────────────────────────────
   bot.on('photo', async (msg) => {
     const chatId = msg.chat.id;
@@ -693,6 +728,98 @@ function startBot() {
         break;
       }
 
+      // ─── Fluxo de Gerenciamento de Colaboradores ───
+      case STATES.AWAITING_COLAB_NOME: {
+        const input = msg.text.trim();
+        const editId = getData(userId).editColabId;
+        const employee = editId ? getEmployeeById(editId) : null;
+        
+        let nomeFinal = input;
+        if (editId && input.toLowerCase() === 'manter') {
+          nomeFinal = employee.name;
+        }
+
+        setData(userId, 'colabName', nomeFinal);
+        setState(userId, STATES.AWAITING_COLAB_CPF);
+        
+        const cpfText = editId ? `(atual: ${employee.cpf || 'vazio'}, ou "manter")` : `(ou "pular")`;
+        bot.sendMessage(chatId, `✅ Nome: *${escapeMd(nomeFinal)}*\n\nDigite o *CPF* ${cpfText}:`, { parse_mode: 'Markdown' });
+        break;
+      }
+
+      case STATES.AWAITING_COLAB_CPF: {
+        const input = msg.text.trim();
+        const editId = getData(userId).editColabId;
+        const employee = editId ? getEmployeeById(editId) : null;
+        
+        let cpfFinal = input === 'pular' ? '' : input;
+        if (editId && input.toLowerCase() === 'manter') {
+          cpfFinal = employee.cpf || '';
+        }
+
+        setData(userId, 'colabCpf', cpfFinal);
+        setState(userId, STATES.AWAITING_COLAB_CARGO);
+        
+        const cargoText = editId ? `(atual: ${employee.cargo || 'vazio'}, ou "manter")` : ``;
+        bot.sendMessage(chatId, `✅ CPF: *${cpfFinal || 'Não informado'}*\n\nDigite o *Cargo* ${cargoText}:`, { parse_mode: 'Markdown' });
+        break;
+      }
+
+      case STATES.AWAITING_COLAB_CARGO: {
+        const input = msg.text.trim();
+        const editId = getData(userId).editColabId;
+        const employee = editId ? getEmployeeById(editId) : null;
+        
+        let cargoFinal = input;
+        if (editId && input.toLowerCase() === 'manter') {
+          cargoFinal = employee.cargo || '';
+        }
+
+        setData(userId, 'colabCargo', cargoFinal);
+        setState(userId, STATES.AWAITING_COLAB_SETOR);
+        
+        const setorText = editId ? `(atual: ${employee.setor || 'vazio'}, ou "manter")` : ``;
+        bot.sendMessage(chatId, `✅ Cargo: *${escapeMd(cargoFinal)}*\n\nDigite o *Setor* ${setorText}:`, { parse_mode: 'Markdown' });
+        break;
+      }
+
+      case STATES.AWAITING_COLAB_SETOR: {
+        const input = msg.text.trim();
+        const d = getData(userId);
+        const editId = d.editColabId;
+        const employee = editId ? getEmployeeById(editId) : null;
+        
+        let setorFinal = input;
+        if (editId && input.toLowerCase() === 'manter') {
+          setorFinal = employee.setor || '';
+        }
+
+        saveEmployee({
+          id: editId || undefined,
+          name: d.colabName,
+          cpf: d.colabCpf || null,
+          cargo: d.colabCargo,
+          setor: setorFinal
+        });
+
+        resetConversation(userId);
+        bot.sendMessage(
+          chatId,
+          `✅ Colaborador *${editId ? 'atualizado' : 'cadastrado'}* com sucesso!\n\n` +
+          `👤 *${escapeMd(d.colabName)}*\nCPF: ${d.colabCpf || 'Não informado'}\nCargo: ${escapeMd(d.colabCargo)}\nSetor: ${escapeMd(setorFinal)}`,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
+
+      case STATES.AWAITING_CPF: {
+        const cpf = msg.text.trim() === 'pular' ? '' : msg.text.trim();
+        setData(userId, 'cpf', cpf);
+        setState(userId, STATES.AWAITING_CARGO);
+        bot.sendMessage(chatId, `✅ CPF: *${cpf || 'Não informado'}*\n\nQual é o *cargo* deste funcionário?`, { parse_mode: 'Markdown' });
+        break;
+      }
+
       case STATES.AWAITING_CARGO: {
         setData(userId, 'cargo', msg.text.trim());
         setState(userId, STATES.AWAITING_SETOR);
@@ -776,14 +903,22 @@ function startBot() {
           );
         } else {
           setData(userId, 'dinheiroEmployee', {});
-          setState(userId, STATES.AWAITING_DINHEIRO_CARGO);
+          setState(userId, STATES.AWAITING_DINHEIRO_CPF);
           bot.sendMessage(
             chatId,
             `👤 Funcionário *${escapeMd(name)}* não encontrado.\n\n` +
-            `Qual é o *cargo* deste funcionário?`,
+            `Qual é o *CPF* deste funcionário? (Ou digite "pular")`,
             { parse_mode: 'Markdown' }
           );
         }
+        break;
+      }
+
+      case STATES.AWAITING_DINHEIRO_CPF: {
+        const cpf = msg.text.trim() === 'pular' ? '' : msg.text.trim();
+        setData(userId, 'dinheiroCpf', cpf);
+        setState(userId, STATES.AWAITING_DINHEIRO_CARGO);
+        bot.sendMessage(chatId, `✅ CPF: *${cpf || 'Não informado'}*\n\nQual é o *cargo* deste funcionário?`, { parse_mode: 'Markdown' });
         break;
       }
 
@@ -910,6 +1045,81 @@ function startBot() {
     if (!isAllowed(userId)) return;
 
     await bot.answerCallbackQuery(query.id);
+
+    if (query.data.startsWith('colab_')) {
+      const action = query.data;
+      
+      // Remove o menu inicial
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      if (action === 'colab_add') {
+        setState(userId, STATES.AWAITING_COLAB_NOME);
+        return bot.sendMessage(chatId, '📝 Digite o *nome completo* do novo colaborador:', { parse_mode: 'Markdown' });
+      }
+
+      if (action === 'colab_list') {
+        const employees = listEmployees();
+        if (employees.length === 0) return bot.sendMessage(chatId, 'Nenhum funcionário cadastrado.');
+        let text = '📋 *Lista de Colaboradores:*\n\n';
+        employees.forEach(e => {
+          text += `👤 *${e.name}*\nCPF: ${e.cpf || 'Não informado'} | Cargo: ${e.cargo}\n\n`;
+        });
+        resetConversation(userId);
+        return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+      }
+
+      if (action === 'colab_edit' || action === 'colab_del') {
+        const employees = listEmployees();
+        if (employees.length === 0) return bot.sendMessage(chatId, 'Nenhum funcionário cadastrado.');
+
+        const isEdit = action === 'colab_edit';
+        setState(userId, isEdit ? STATES.AWAITING_COLAB_EDIT_SELECTION : STATES.AWAITING_COLAB_DELETE_SELECTION);
+        setData(userId, 'colabList', employees);
+
+        const keyboard = [];
+        for (let i = 0; i < employees.length; i += 2) {
+          const row = [{ text: employees[i].name, callback_data: `sel_colab_${employees[i].id}` }];
+          if (employees[i + 1]) {
+            row.push({ text: employees[i + 1].name, callback_data: `sel_colab_${employees[i + 1].id}` });
+          }
+          keyboard.push(row);
+        }
+
+        return bot.sendMessage(chatId, `Selecione o colaborador para *${isEdit ? 'editar' : 'remover'}*:`, {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: keyboard }
+        });
+      }
+    }
+
+    if (query.data.startsWith('sel_colab_')) {
+      const state = getState(userId);
+      if (state !== STATES.AWAITING_COLAB_EDIT_SELECTION && state !== STATES.AWAITING_COLAB_DELETE_SELECTION) return;
+
+      const empId = parseInt(query.data.replace('sel_colab_', ''), 10);
+      const employee = getEmployeeById(empId);
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      if (!employee) return bot.sendMessage(chatId, '❌ Colaborador não encontrado.');
+
+      if (state === STATES.AWAITING_COLAB_DELETE_SELECTION) {
+        deleteEmployee(empId);
+        resetConversation(userId);
+        return bot.sendMessage(chatId, `✅ Colaborador *${escapeMd(employee.name)}* removido com sucesso.`, { parse_mode: 'Markdown' });
+      } else {
+        // Edit flow
+        setData(userId, 'editColabId', empId);
+        setState(userId, STATES.AWAITING_COLAB_NOME);
+        return bot.sendMessage(chatId, `✏️ Editando: *${escapeMd(employee.name)}*\n\nDigite o novo *Nome* (ou envie "manter"):`, { parse_mode: 'Markdown' });
+      }
+    }
 
     if (query.data.startsWith('extrato_emp_')) {
       const state = getState(userId);

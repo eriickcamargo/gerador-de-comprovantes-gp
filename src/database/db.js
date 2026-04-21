@@ -39,6 +39,7 @@ async function initDB() {
     CREATE TABLE IF NOT EXISTS employees (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL UNIQUE,
+      cpf        TEXT,
       cargo      TEXT,
       setor      TEXT,
       updated_at TEXT DEFAULT (datetime('now'))
@@ -87,6 +88,10 @@ async function initDB() {
 
   try {
     db.run(`ALTER TABLE receipts ADD COLUMN extra_data TEXT`);
+  } catch (_) { }
+
+  try {
+    db.run(`ALTER TABLE employees ADD COLUMN cpf TEXT`);
   } catch (_) { }
 
   persist();
