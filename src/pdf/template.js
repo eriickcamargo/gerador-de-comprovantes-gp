@@ -94,6 +94,7 @@ function buildReceiptHTML(data) {
     paymentMethod, // 'pix' | 'dinheiro'
     extraData,
     employeeCpf,
+    transactionId,
   } = data;
 
   const isDinheiro = paymentMethod === 'dinheiro';
