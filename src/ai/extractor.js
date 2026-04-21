@@ -28,8 +28,17 @@ ATENÇÃO:
 - "data" deve estar no formato DD/MM/AAAA.
 - Todos os campos desconhecidos devem ser null (não string vazia).`;
 
+const RETRYABLE_STATUSES = new Set([503, 429]);
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 3000;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
- * Extrai dados de um comprovante PIX usando Google Gemini Vision
+ * Extrai dados de um comprovante PIX usando Google Gemini Vision.
+ * Tenta até MAX_RETRIES vezes em caso de 503/429 com backoff exponencial.
  * @param {string} filePath - Caminho local do arquivo (imagem ou PDF)
  * @returns {Object} Dados extraídos do comprovante
  */
@@ -38,7 +47,6 @@ async function extractFromVoucher(filePath) {
   const fileBuffer = fs.readFileSync(filePath);
   const base64Data = fileBuffer.toString('base64');
 
-  // Define o mimeType correto
   const mimeMap = {
     '.jpg':  'image/jpeg',
     '.jpeg': 'image/jpeg',
@@ -50,33 +58,40 @@ async function extractFromVoucher(filePath) {
 
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        data: base64Data,
-        mimeType: mimeType,
-      },
-    },
-    EXTRACTION_PROMPT,
-  ]);
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await model.generateContent([
+        { inlineData: { data: base64Data, mimeType } },
+        EXTRACTION_PROMPT,
+      ]);
 
-  const rawText = result.response.text().trim();
+      const rawText = result.response.text().trim();
+      const jsonText = rawText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
 
-  // Remove possíveis blocos markdown ```json ... ```
-  const jsonText = rawText
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim();
+      try {
+        return JSON.parse(jsonText);
+      } catch {
+        console.error('Erro ao parsear JSON da IA:', rawText);
+        throw new Error(
+          'A IA não retornou um JSON válido. Tente reenviar o comprovante com melhor qualidade.'
+        );
+      }
+    } catch (err) {
+      const isRetryable = RETRYABLE_STATUSES.has(err.status);
+      if (!isRetryable || attempt === MAX_RETRIES) throw err;
 
-  try {
-    const parsed = JSON.parse(jsonText);
-    return parsed;
-  } catch (err) {
-    console.error('Erro ao parsear JSON da IA:', rawText);
-    throw new Error(
-      'A IA não retornou um JSON válido. Tente reenviar o comprovante com melhor qualidade.'
-    );
+      const delay = RETRY_BASE_DELAY_MS * attempt;
+      console.warn(`Gemini retornou ${err.status} (tentativa ${attempt}/${MAX_RETRIES}). Aguardando ${delay / 1000}s...`);
+      lastError = err;
+      await sleep(delay);
+    }
   }
+
+  throw lastError;
 }
 
 module.exports = { extractFromVoucher };
