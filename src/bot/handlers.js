@@ -226,6 +226,20 @@ async function finishAndSendReceipt(bot, chatId, userId) {
     };
 
     // Salva no DB para obter o número sequencial
+    // Salva/atualiza dados do funcionário antes de gerar o PDF para ter o CPF disponível
+    if (!employee.id) {
+      saveEmployee({
+        name: extracted.nome_beneficiario,
+        cpf: data.cpf !== 'pular' ? data.cpf : null,
+        cargo: data.cargo,
+        setor: data.setor,
+      });
+      const newEmp = findEmployee(extracted.nome_beneficiario);
+      if (newEmp && newEmp.cpf) receiptData.employeeCpf = newEmp.cpf;
+    } else {
+      receiptData.employeeCpf = employee.cpf;
+    }
+
     const savedReceipt = saveReceipt({
       employee_name: receiptData.employeeName,
       cargo: receiptData.cargo,
@@ -248,24 +262,6 @@ async function finishAndSendReceipt(bot, chatId, userId) {
 
     // Gera o PDF
     const pdfPath = await generatePDF(receiptData, savedReceipt.receipt_number);
-
-    // Salva o caminho do PDF no histórico (opcional — para reenvio)
-    // Não atualiza DB pois o PDF fica no temp e pode ser deletado
-
-    // Salva/atualiza dados do funcionário
-    if (!employee.id) {
-      saveEmployee({
-        name: extracted.nome_beneficiario,
-        cpf: data.cpf !== 'pular' ? data.cpf : null,
-        cargo: data.cargo,
-        setor: data.setor,
-      });
-      // Busca novamente para pegar o ID e o CPF gravado caso omitido
-      const newEmp = findEmployee(extracted.nome_beneficiario);
-      if (newEmp && newEmp.cpf) receiptData.employeeCpf = newEmp.cpf;
-    } else {
-      receiptData.employeeCpf = employee.cpf;
-    }
 
     // Envia o PDF com contentType explícito (evita DeprecationWarning)
     await bot.sendDocument(
@@ -341,11 +337,7 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
       extraData:        receiptData.extraData,
     });
 
-    receiptData.receiptNumber = savedReceipt.receipt_number;
-
-    const pdfPath = await generatePDF(receiptData, savedReceipt.receipt_number);
-
-    // Salva funcionário se for novo
+    // Salva funcionário se for novo antes de gerar o PDF para ter o CPF disponível
     if (!employee.id) {
       saveEmployee({
         name:  data.dinheiroName,
@@ -358,6 +350,10 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
     } else {
       receiptData.employeeCpf = employee.cpf;
     }
+
+    receiptData.receiptNumber = savedReceipt.receipt_number;
+
+    const pdfPath = await generatePDF(receiptData, savedReceipt.receipt_number);
 
     await bot.sendDocument(
       chatId,
@@ -577,12 +573,14 @@ function startBot() {
     try {
       await bot.sendMessage(chatId, `⏳ Regenerando recibo ${receiptNumber}...`);
       const company = getCompany() || {};
+      const empForReceipt = findEmployee(receipt.employee_name);
       const receiptData = {
         receiptNumber: receipt.receipt_number,
         companyName: receipt.company_name || company.name || 'EMPRESA',
         companyCnpj: receipt.company_cnpj || company.cnpj || '',
         companyAddress: company.address || '',
         employeeName: receipt.employee_name,
+        employeeCpf: empForReceipt ? empForReceipt.cpf : null,
         cargo: receipt.cargo,
         setor: receipt.setor,
         amount: receipt.amount,
