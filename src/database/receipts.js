@@ -84,14 +84,19 @@ function searchReceiptsByEmployee(name) {
  * @param {string} year - Ano com 4 dígitos (ex: "2026")
  */
 function getReceiptsByEmployeeAndPeriod(employeeName, month, year) {
-  // created_at é armazenado como "AAAA-MM-DD HH:MM:SS" pelo sql.js
-  const prefix = `${year}-${month}`;
+  // payment_date é armazenado como "DD/MM/AAAA"; substr(payment_date, 4, 7) extrai "MM/AAAA"
+  // Fallback para created_at quando payment_date é nulo
+  const period = `${month}/${year}`;
+  const createdPrefix = `${year}-${month}`;
   return db.all(
     `SELECT * FROM receipts
      WHERE LOWER(employee_name) = LOWER(?)
-       AND substr(created_at, 1, 7) = ?
+       AND (
+         substr(payment_date, 4, 7) = ?
+         OR (payment_date IS NULL AND substr(created_at, 1, 7) = ?)
+       )
      ORDER BY id ASC`,
-    [employeeName, prefix]
+    [employeeName, period, createdPrefix]
   );
 }
 
