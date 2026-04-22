@@ -7,7 +7,7 @@ const { extractFromVoucher } = require('../ai/extractor');
 const { generatePDF, generateStatementPDF, cleanupFile } = require('../pdf/generator');
 const { findEmployee, saveEmployee, listEmployees, deleteEmployee, getEmployeeById } = require('../database/employees');
 const { getCompany, saveCompany } = require('../database/company');
-const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, cancelReceiptByNumber } = require('../database/receipts');
+const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, cancelReceiptByNumber, updateReceipt } = require('../database/receipts');
 const { STATES, getState, setState, getData, setData, resetConversation } = require('./conversations');
 
 const TEMP_DIR = path.join(__dirname, '../../temp');
@@ -89,6 +89,30 @@ function valeKeyboardDinheiro() {
       ],
       [{ text: '💰 Adiantamento Salarial', callback_data: 'dvale_Adiantamento Salarial' }],
       [{ text: '📋 Outro (digitar)', callback_data: 'dvale_outro' }],
+    ],
+  };
+}
+
+/**
+ * Teclado inline para seleção de tipo de vale no fluxo de edição
+ */
+function valeKeyboardEdit() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '🍽️ Alimentação', callback_data: 'evale_Alimentação' },
+        { text: '🚌 Transporte',  callback_data: 'evale_Transporte' },
+      ],
+      [
+        { text: '🍴 Refeição',    callback_data: 'evale_Refeição' },
+        { text: '⛽ Combustível',  callback_data: 'evale_Combustível' },
+      ],
+      [
+        { text: '🏖️ Férias',      callback_data: 'evale_Férias' },
+        { text: '🎁 13º Salário', callback_data: 'evale_13º Salário' },
+      ],
+      [{ text: '💰 Adiantamento Salarial', callback_data: 'evale_Adiantamento Salarial' }],
+      [{ text: '📋 Outro (digitar)', callback_data: 'evale_outro' }],
     ],
   };
 }
@@ -386,6 +410,95 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
   }
 }
 
+/**
+ * Atualiza os campos alterados no recibo e re-gera o PDF
+ */
+async function finishEditAndResendReceipt(bot, chatId, userId) {
+  const d = getData(userId);
+  const receiptNumber = d.editReceiptNumber;
+
+  setState(userId, STATES.PROCESSING);
+
+  try {
+    await bot.sendMessage(chatId, '⏳ Atualizando e gerando o PDF do recibo...');
+
+    const updates = {};
+    if (d.editAmount !== undefined)    updates.amount      = d.editAmount;
+    if (d.editValeType !== undefined)  updates.vale_type   = d.editValeType;
+    if (d.editDate !== undefined)      updates.payment_date = d.editDate;
+    if (d.editCargo !== undefined)     updates.cargo       = d.editCargo;
+    if (d.editSetor !== undefined)     updates.setor       = d.editSetor;
+
+    if (d.editValeType !== undefined) {
+      if (d.editExtraData !== undefined) {
+        updates.extra_data = JSON.stringify(d.editExtraData);
+      } else if (d.editValeType !== 'Férias' && d.editValeType !== '13º Salário') {
+        updates.extra_data = null;
+      }
+    } else if (d.editExtraData !== undefined) {
+      updates.extra_data = JSON.stringify(d.editExtraData);
+    }
+
+    const updatedReceipt = Object.keys(updates).length > 0
+      ? updateReceipt(receiptNumber, updates)
+      : getReceiptByNumber(receiptNumber);
+
+    const company = getCompany() || {};
+    const emp = findEmployee(updatedReceipt.employee_name);
+
+    const receiptData = {
+      receiptNumber:  updatedReceipt.receipt_number,
+      companyName:    updatedReceipt.company_name || company.name    || 'EMPRESA',
+      companyCnpj:    updatedReceipt.company_cnpj || company.cnpj    || '',
+      companyAddress: company.address || '',
+      employeeName:   updatedReceipt.employee_name,
+      employeeCpf:    emp ? emp.cpf : null,
+      cargo:          updatedReceipt.cargo,
+      setor:          updatedReceipt.setor,
+      amount:         updatedReceipt.amount,
+      valeType:       updatedReceipt.vale_type,
+      paymentDate:    updatedReceipt.payment_date,
+      paymentTime:    updatedReceipt.payment_time,
+      pixKey:         updatedReceipt.pix_key,
+      agenciaConta:   updatedReceipt.agencia_conta,
+      transactionId:  updatedReceipt.transaction_id,
+      bankName:       updatedReceipt.bank_name,
+      paymentMethod:  updatedReceipt.payment_method || 'pix',
+    };
+
+    if (updatedReceipt.extra_data) {
+      try { receiptData.extraData = JSON.parse(updatedReceipt.extra_data); } catch (e) {}
+    }
+
+    const pdfPath = await generatePDF(receiptData, updatedReceipt.receipt_number);
+
+    await bot.sendDocument(
+      chatId,
+      fs.createReadStream(pdfPath),
+      {
+        caption:
+          `✅ *Recibo Nº ${updatedReceipt.receipt_number} (Re-emitido)*\n` +
+          `👤 ${updatedReceipt.employee_name}\n` +
+          `💰 ${updatedReceipt.amount} — Vale ${updatedReceipt.vale_type}\n` +
+          `📅 ${updatedReceipt.payment_date}`,
+        parse_mode: 'Markdown',
+      },
+      {
+        filename: `recibo-${updatedReceipt.receipt_number}.pdf`,
+        contentType: 'application/pdf',
+      }
+    );
+
+    cleanupFile(pdfPath);
+    resetConversation(userId);
+    await bot.sendMessage(chatId, '✅ Recibo atualizado e re-emitido com sucesso!');
+  } catch (err) {
+    console.error('Erro ao editar recibo:', err);
+    setState(userId, STATES.IDLE);
+    bot.sendMessage(chatId, `❌ Erro ao editar o recibo: ${err.message}`);
+  }
+}
+
 function startBot() {
   const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
   console.log('🤖 Bot Telegram iniciado (polling)');
@@ -410,6 +523,7 @@ function startBot() {
       `/historico [Qtd] — Ver últimos recibos (ex: /historico 20)\n` +
       `/buscar Nome — Buscar recibos de um funcionário\n` +
       `/extrato — Gerar extrato mensal de um funcionário\n` +
+      `/editar_recibo NUMERO — Editar e re-emitir um recibo (ex: /editar_recibo 202604-001)\n` +
       `/cancelar_recibo NUMERO — Cancelar um recibo emitido (ex: /cancelar_recibo 202604-001)\n` +
       `/cancelar — Cancelar operação atual`,
       { parse_mode: 'Markdown' }
@@ -518,6 +632,66 @@ function startBot() {
       `Valor: ${receipt.amount}\n\n` +
       `O recibo não foi apagado do banco de dados, mas agora consta como cancelado no histórico e extrato.`,
       { parse_mode: 'Markdown' }
+    );
+  });
+
+  // ─── /editar_recibo ───────────────────────────────────────────────────────
+  bot.onText(/\/editar_recibo (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAllowed(userId)) return;
+
+    const state = getState(userId);
+    if (state !== STATES.IDLE) {
+      return bot.sendMessage(chatId, '⚠️ Há uma operação em andamento. Use /cancelar para recomeçar.');
+    }
+
+    const receiptNumber = match[1].trim();
+    const receipt = getReceiptByNumber(receiptNumber);
+
+    if (!receipt) {
+      return bot.sendMessage(chatId, `❌ Recibo *${receiptNumber}* não encontrado.`, { parse_mode: 'Markdown' });
+    }
+
+    if (receipt.status === 'cancelled') {
+      return bot.sendMessage(
+        chatId,
+        `⚠️ O recibo *${receiptNumber}* está cancelado e não pode ser editado.`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    resetConversation(userId);
+    setData(userId, 'editReceiptNumber', receiptNumber);
+    setState(userId, STATES.AWAITING_EDIT_FIELD);
+
+    const methodLabel = receipt.payment_method === 'dinheiro' ? '💵 Dinheiro' : '📲 PIX';
+
+    bot.sendMessage(
+      chatId,
+      `✏️ *Editar Recibo ${receiptNumber}*\n\n` +
+      `👤 *${escapeMd(receipt.employee_name)}*\n` +
+      `💰 ${escapeMd(receipt.amount)} — Vale ${escapeMd(receipt.vale_type)}\n` +
+      `📅 ${receipt.payment_date}${receipt.payment_time ? ' às ' + receipt.payment_time : ''}\n` +
+      `${methodLabel}\n\n` +
+      `Qual campo deseja alterar?`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '💰 Valor',         callback_data: 'edit_field_amount' },
+              { text: '🏷️ Tipo de Vale',  callback_data: 'edit_field_vale' },
+            ],
+            [{ text: '📅 Data de Pagamento', callback_data: 'edit_field_date' }],
+            [
+              { text: '💼 Cargo',  callback_data: 'edit_field_cargo' },
+              { text: '🏢 Setor',  callback_data: 'edit_field_setor' },
+            ],
+            [{ text: '🔄 Re-emitir (sem alterações)', callback_data: 'edit_field_reissue' }],
+          ],
+        },
+      }
     );
   });
 
@@ -1083,6 +1257,93 @@ function startBot() {
         break;
       }
 
+      // ─── Fluxo de edição de recibos ────────────────────────────────────────
+
+      case STATES.AWAITING_EDIT_AMOUNT: {
+        const raw = msg.text.trim();
+        const cleaned = raw.replace('R$', '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+        const parsed = parseFloat(cleaned);
+        if (isNaN(parsed) || parsed <= 0) {
+          return bot.sendMessage(chatId, '⚠️ Valor inválido. Tente novamente (ex: R$ 150,00).');
+        }
+        const valor = `R$ ${parsed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        setData(userId, 'editAmount', valor);
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_DATE: {
+        const dateRaw = msg.text.trim().toLowerCase();
+        let dateValue;
+        if (dateRaw === 'hoje') {
+          dateValue = todayBR();
+        } else {
+          if (!/^\d{2}\/\d{2}\/\d{4}$/.test(msg.text.trim())) {
+            return bot.sendMessage(chatId, '⚠️ Formato inválido. Use DD/MM/AAAA ou escreva *hoje*.', { parse_mode: 'Markdown' });
+          }
+          dateValue = msg.text.trim();
+        }
+        setData(userId, 'editDate', dateValue);
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_CARGO: {
+        setData(userId, 'editCargo', msg.text.trim());
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_SETOR: {
+        setData(userId, 'editSetor', msg.text.trim());
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_OUTRO_VALE: {
+        setData(userId, 'editValeType', msg.text.trim());
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_FERIAS_AQUISITIVO: {
+        setData(userId, 'editExtraData', { periodoAquisitivo: msg.text.trim() });
+        setState(userId, STATES.AWAITING_EDIT_FERIAS_GOZO);
+        bot.sendMessage(
+          chatId,
+          `✅ Período Aquisitivo: *${escapeMd(msg.text.trim())}*\n\nQual é o *Período de Gozo* (ex: 01/05/2026 a 30/05/2026)?`,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_FERIAS_GOZO: {
+        const d = getData(userId);
+        d.editExtraData = d.editExtraData || {};
+        d.editExtraData.periodoGozo = msg.text.trim();
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_DECIMO_PARCELA: {
+        setData(userId, 'editExtraData', { parcelaDecimo: msg.text.trim() });
+        setState(userId, STATES.AWAITING_EDIT_DECIMO_ANO);
+        bot.sendMessage(
+          chatId,
+          `✅ Parcela: *${escapeMd(msg.text.trim())}*\n\nQual é o *Ano de Referência* (ex: 2026)?`,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
+
+      case STATES.AWAITING_EDIT_DECIMO_ANO: {
+        const dEdit = getData(userId);
+        dEdit.editExtraData = dEdit.editExtraData || {};
+        dEdit.editExtraData.anoBase = msg.text.trim();
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        break;
+      }
+
       default: {
         if (state === STATES.IDLE) {
           bot.sendMessage(
@@ -1313,6 +1574,96 @@ function startBot() {
 
       await bot.sendMessage(chatId, `✅ Tipo selecionado: *Vale ${escapeMd(valeType)}*`, { parse_mode: 'Markdown' });
       await finishAndSendCashReceipt(bot, chatId, userId);
+      return;
+    }
+
+    if (query.data.startsWith('edit_field_')) {
+      const state = getState(userId);
+      if (state !== STATES.AWAITING_EDIT_FIELD) return;
+
+      const field = query.data.replace('edit_field_', '');
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      if (field === 'reissue') {
+        await finishEditAndResendReceipt(bot, chatId, userId);
+        return;
+      }
+
+      if (field === 'amount') {
+        setState(userId, STATES.AWAITING_EDIT_AMOUNT);
+        return bot.sendMessage(chatId, '💰 Digite o *novo valor* (ex: R$ 1.500,00):', { parse_mode: 'Markdown' });
+      }
+
+      if (field === 'vale') {
+        setState(userId, STATES.AWAITING_EDIT_VALE_TYPE);
+        return bot.sendMessage(chatId, '🏷️ Selecione o *novo tipo de vale:*', {
+          parse_mode: 'Markdown',
+          reply_markup: valeKeyboardEdit(),
+        });
+      }
+
+      if (field === 'date') {
+        setState(userId, STATES.AWAITING_EDIT_DATE);
+        const hoje = todayBR();
+        return bot.sendMessage(
+          chatId,
+          `📅 Digite a *nova data* de pagamento (DD/MM/AAAA) ou *hoje* para usar ${escapeMd(hoje)}:`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      if (field === 'cargo') {
+        setState(userId, STATES.AWAITING_EDIT_CARGO);
+        return bot.sendMessage(chatId, '💼 Digite o *novo cargo:*', { parse_mode: 'Markdown' });
+      }
+
+      if (field === 'setor') {
+        setState(userId, STATES.AWAITING_EDIT_SETOR);
+        return bot.sendMessage(chatId, '🏢 Digite o *novo setor:*', { parse_mode: 'Markdown' });
+      }
+    }
+
+    if (query.data.startsWith('evale_')) {
+      const state = getState(userId);
+      if (state !== STATES.AWAITING_EDIT_VALE_TYPE) return;
+
+      const valeType = query.data.replace('evale_', '');
+
+      if (valeType === 'outro') {
+        setState(userId, STATES.AWAITING_EDIT_OUTRO_VALE);
+        return bot.sendMessage(chatId, '📝 Digite o tipo de vale:');
+      }
+
+      setData(userId, 'editValeType', valeType);
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      if (valeType === 'Férias') {
+        setState(userId, STATES.AWAITING_EDIT_FERIAS_AQUISITIVO);
+        return bot.sendMessage(
+          chatId,
+          `✅ Tipo: *Férias*\n\nQual é o *Período Aquisitivo* (ex: 2024/2025)?`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      if (valeType === '13º Salário') {
+        setState(userId, STATES.AWAITING_EDIT_DECIMO_PARCELA);
+        return bot.sendMessage(
+          chatId,
+          `✅ Tipo: *13º Salário*\n\nQual é a *Parcela* (ex: 1ª Parcela, Parcela Única)?`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      await bot.sendMessage(chatId, `✅ Novo tipo: *Vale ${escapeMd(valeType)}*`, { parse_mode: 'Markdown' });
+      await finishEditAndResendReceipt(bot, chatId, userId);
       return;
     }
 

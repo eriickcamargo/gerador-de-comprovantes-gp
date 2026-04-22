@@ -105,6 +105,20 @@ function cancelReceiptByNumber(receiptNumber) {
   return getReceiptByNumber(receiptNumber);
 }
 
+function updateReceipt(receiptNumber, updateData) {
+  const allowed = [
+    'employee_name', 'cargo', 'setor', 'amount', 'vale_type',
+    'payment_date', 'payment_time', 'pix_key', 'agencia_conta',
+    'transaction_id', 'bank_name', 'extra_data',
+  ];
+  const fields = Object.keys(updateData).filter(k => allowed.includes(k));
+  if (fields.length === 0) return getReceiptByNumber(receiptNumber);
+  const sets = fields.map(f => `${f} = ?`).join(', ');
+  const values = [...fields.map(f => updateData[f]), receiptNumber];
+  db.run(`UPDATE receipts SET ${sets} WHERE receipt_number = ?`, values);
+  return getReceiptByNumber(receiptNumber);
+}
+
 module.exports = {
   generateReceiptNumber,
   saveReceipt,
@@ -113,4 +127,5 @@ module.exports = {
   searchReceiptsByEmployee,
   getReceiptsByEmployeeAndPeriod,
   cancelReceiptByNumber,
+  updateReceipt,
 };
