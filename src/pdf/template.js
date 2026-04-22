@@ -62,7 +62,10 @@ function valorPorExtenso(valorStr) {
     return `${parteInteira} ${moedaInteira}`;
   }
 
-  const parteCentavos = unidades[centavos] || `${Math.floor(centavos / 10)} e ${unidades[centavos % 10]}`;
+  const parteCentavos = unidades[centavos] ||
+    (centavos % 10 === 0
+      ? dezenas[Math.floor(centavos / 10)]
+      : `${dezenas[Math.floor(centavos / 10)]} e ${unidades[centavos % 10]}`);
   const moedaCentavos = centavos === 1 ? 'centavo' : 'centavos';
 
   if (inteiros === 0) {
