@@ -21,7 +21,8 @@ const STATES = {
   AWAITING_DECIMO_PARCELA: 'AWAITING_DECIMO_PARCELA',         // aguardando parcela do 13º
   AWAITING_DECIMO_ANO: 'AWAITING_DECIMO_ANO',                 // aguardando ano de referência do 13º
   // ─── Fluxo de pagamento em dinheiro ───
-  AWAITING_DINHEIRO_NAME: 'AWAITING_DINHEIRO_NAME',           // aguardando nome do funcionário
+  AWAITING_DINHEIRO_SELECT: 'AWAITING_DINHEIRO_SELECT',       // aguardando seleção do funcionário via botão
+  AWAITING_DINHEIRO_NAME: 'AWAITING_DINHEIRO_NAME',           // aguardando nome (novo funcionário)
   AWAITING_DINHEIRO_CPF: 'AWAITING_DINHEIRO_CPF',             // cpf (funcionário novo)
   AWAITING_DINHEIRO_CARGO: 'AWAITING_DINHEIRO_CARGO',         // cargo (funcionário novo)
   AWAITING_DINHEIRO_SETOR: 'AWAITING_DINHEIRO_SETOR',         // setor (funcionário novo)

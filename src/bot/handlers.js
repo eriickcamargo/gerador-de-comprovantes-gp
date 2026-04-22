@@ -436,12 +436,35 @@ function startBot() {
     }
 
     resetConversation(userId);
-    setState(userId, STATES.AWAITING_DINHEIRO_NAME);
+
+    const employees = listEmployees();
+
+    if (employees.length === 0) {
+      setState(userId, STATES.AWAITING_DINHEIRO_NAME);
+      return bot.sendMessage(
+        chatId,
+        '💵 *Recibo de Pagamento em Dinheiro*\n\n' +
+        'Nenhum colaborador cadastrado ainda.\n\nDigite o *nome completo* do funcionário:',
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    setState(userId, STATES.AWAITING_DINHEIRO_SELECT);
+
+    const keyboard = [];
+    for (let i = 0; i < employees.length; i += 2) {
+      const row = [{ text: employees[i].name, callback_data: `dinheiro_emp_${employees[i].id}` }];
+      if (employees[i + 1]) {
+        row.push({ text: employees[i + 1].name, callback_data: `dinheiro_emp_${employees[i + 1].id}` });
+      }
+      keyboard.push(row);
+    }
+    keyboard.push([{ text: '➕ Novo Colaborador', callback_data: 'dinheiro_new' }]);
+
     bot.sendMessage(
       chatId,
-      '💵 *Recibo de Pagamento em Dinheiro*\n\n' +
-      'Digite o *nome completo* do funcionário:',
-      { parse_mode: 'Markdown' }
+      '💵 *Recibo de Pagamento em Dinheiro*\n\nSelecione o *colaborador*:',
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }
     );
   });
 
@@ -924,14 +947,14 @@ function startBot() {
         }
         setData(userId, 'dinheiroName', name);
 
-        // Tenta achar o funcionário no banco
+        // Verifica se já existe no banco (evita duplicatas)
         const emp = findEmployee(name);
         if (emp) {
           setData(userId, 'dinheiroEmployee', emp);
           setState(userId, STATES.AWAITING_DINHEIRO_VALOR);
           bot.sendMessage(
             chatId,
-            `ℹ️ *Funcionário reconhecido!*\n` +
+            `ℹ️ *${escapeMd(name)}* já está cadastrado.\n` +
             `Cargo: *${escapeMd(emp.cargo)}* | Setor: *${escapeMd(emp.setor)}*\n\n` +
             `Digite o *valor* pago em dinheiro (ex: R$ 150,00):`,
             { parse_mode: 'Markdown' }
@@ -941,8 +964,7 @@ function startBot() {
           setState(userId, STATES.AWAITING_DINHEIRO_CPF);
           bot.sendMessage(
             chatId,
-            `👤 Funcionário *${escapeMd(name)}* não encontrado.\n\n` +
-            `Qual é o *CPF* deste funcionário? (Ou digite "pular")`,
+            `👤 Cadastrando *${escapeMd(name)}*.\n\nQual é o *CPF*? (Ou digite "pular")`,
             { parse_mode: 'Markdown' }
           );
         }
@@ -1224,6 +1246,40 @@ function startBot() {
 
       resetConversation(userId);
       return;
+    }
+
+    if (query.data.startsWith('dinheiro_emp_') || query.data === 'dinheiro_new') {
+      const state = getState(userId);
+      if (state !== STATES.AWAITING_DINHEIRO_SELECT) return;
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      if (query.data === 'dinheiro_new') {
+        setState(userId, STATES.AWAITING_DINHEIRO_NAME);
+        return bot.sendMessage(chatId, '👤 Digite o *nome completo* do novo colaborador:', { parse_mode: 'Markdown' });
+      }
+
+      const empId = parseInt(query.data.replace('dinheiro_emp_', ''), 10);
+      const employee = getEmployeeById(empId);
+
+      if (!employee) {
+        resetConversation(userId);
+        return bot.sendMessage(chatId, '❌ Colaborador não encontrado. Use /dinheiro para tentar novamente.');
+      }
+
+      setData(userId, 'dinheiroName', employee.name);
+      setData(userId, 'dinheiroEmployee', employee);
+      setState(userId, STATES.AWAITING_DINHEIRO_VALOR);
+      return bot.sendMessage(
+        chatId,
+        `✅ *${escapeMd(employee.name)}* selecionado\n` +
+        `Cargo: *${escapeMd(employee.cargo)}* | Setor: *${escapeMd(employee.setor)}*\n\n` +
+        `Digite o *valor* pago em dinheiro (ex: R$ 150,00):`,
+        { parse_mode: 'Markdown' }
+      );
     }
 
     if (query.data.startsWith('dvale_')) {
