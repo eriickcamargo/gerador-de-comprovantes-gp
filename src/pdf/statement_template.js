@@ -92,7 +92,7 @@ function buildStatementHTML(data, receipts) {
       font-size: 9.5pt;
       line-height: 1.5;
       color: #1a1612;
-      background: #fbfaf7;
+      background: #ffffff;
     }
 
     .header {

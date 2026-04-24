@@ -230,12 +230,12 @@ function buildReceiptHTML(data) {
       font-size: 9.5pt;
       line-height: 1.5;
       color: #1a1612;
-      background: #fbfaf7;
+      background: #ffffff;
     }
 
     .block {
       width: 100%;
-      padding: 2mm 0;
+      padding: 1mm 0;
       page-break-inside: avoid;
       display: flex;
       flex-direction: column;
@@ -303,7 +303,7 @@ function buildReceiptHTML(data) {
     .rule {
       height: 0.5px;
       background: #1a1612;
-      margin-top: 4mm;
+      margin-top: 3mm;
     }
     .rule-accent {
       height: 1.5px;
@@ -317,8 +317,8 @@ function buildReceiptHTML(data) {
       justify-content: space-between;
       align-items: flex-end;
       gap: 12mm;
-      margin-top: 6mm;
-      padding-bottom: 5mm;
+      margin-top: 4mm;
+      padding-bottom: 3mm;
       border-bottom: 0.5px solid #efeae0;
     }
     .kicker {
@@ -331,7 +331,7 @@ function buildReceiptHTML(data) {
     }
     .amount-value {
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: 26pt;
+      font-size: 22pt;
       font-weight: 500;
       color: #1a1612;
       line-height: 1;
@@ -356,7 +356,7 @@ function buildReceiptHTML(data) {
     .date-meta { font-size: 7.5pt; color: #5a524a; margin-top: 1mm; }
 
     .body {
-      margin-top: 5mm;
+      margin-top: 3mm;
       font-size: 9pt;
       line-height: 1.65;
       color: #3a342d;
@@ -376,8 +376,8 @@ function buildReceiptHTML(data) {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10mm;
-      margin-top: 5mm;
-      padding-top: 5mm;
+      margin-top: 3mm;
+      padding-top: 3mm;
       border-top: 0.5px solid #efeae0;
     }
     .group-label {
@@ -411,7 +411,7 @@ function buildReceiptHTML(data) {
     }
 
     .sigs {
-      margin-top: 10mm;
+      margin-top: 6mm;
       padding-top: 2mm;
       display: flex;
       gap: 12mm;
@@ -419,7 +419,7 @@ function buildReceiptHTML(data) {
     .sig-col { flex: 1; text-align: center; }
     .sig-line {
       border-top: 0.5px solid #1a1612;
-      margin-top: 8mm;
+      margin-top: 5mm;
       margin-bottom: 1.5mm;
     }
     .sig-name { font-size: 9pt; font-weight: 700; color: #1a1612; }
