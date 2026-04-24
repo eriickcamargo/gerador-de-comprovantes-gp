@@ -21,7 +21,7 @@ async function htmlToPDF(html, outputPath) {
       path: outputPath,
       format: 'A4',
       printBackground: true,
-      margin: { top: '10mm', right: '15mm', bottom: '10mm', left: '15mm' },
+      margin: { top: '0', right: '0', bottom: '0', left: '0' },
     });
     console.log(`✅ PDF gerado: ${outputPath}`);
     return outputPath;
