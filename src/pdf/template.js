@@ -1,10 +1,11 @@
+const LOGO_DATA_URL = require('./logo_base64');
+
 /**
  * Converte valor numérico para extenso em português brasileiro
  * Ex: 1250.00 -> "um mil duzentos e cinquenta reais"
  */
 function valorPorExtenso(valorStr) {
-  // Remove R$, pontos de milhar e troca vírgula por ponto
-  const cleaned = valorStr
+  const cleaned = String(valorStr || '')
     .replace('R$', '')
     .replace(/\./g, '')
     .replace(',', '.')
@@ -62,10 +63,7 @@ function valorPorExtenso(valorStr) {
     return `${parteInteira} ${moedaInteira}`;
   }
 
-  const parteCentavos = unidades[centavos] ||
-    (centavos % 10 === 0
-      ? dezenas[Math.floor(centavos / 10)]
-      : `${dezenas[Math.floor(centavos / 10)]} e ${unidades[centavos % 10]}`);
+  const parteCentavos = unidades[centavos] || `${dezenas[Math.floor(centavos / 10)]}${centavos % 10 ? ' e ' + unidades[centavos % 10] : ''}`;
   const moedaCentavos = centavos === 1 ? 'centavo' : 'centavos';
 
   if (inteiros === 0) {
@@ -76,7 +74,8 @@ function valorPorExtenso(valorStr) {
 }
 
 /**
- * Gera o HTML completo do recibo
+ * Gera o HTML completo do recibo — layout "Corporativo Sóbrio"
+ * Logo no topo, régua fina vermelha como acento, tipografia editorial.
  */
 function buildReceiptHTML(data) {
   const {
@@ -94,14 +93,13 @@ function buildReceiptHTML(data) {
     pixKey,
     agenciaConta,
     bankName,
-    paymentMethod, // 'pix' | 'dinheiro'
+    paymentMethod,
     extraData,
     employeeCpf,
     transactionId,
   } = data;
 
   const isDinheiro = paymentMethod === 'dinheiro';
-
   const amountExtenso = valorPorExtenso(amount || '');
   const today = new Date().toLocaleDateString('pt-BR', {
     day: '2-digit',
@@ -109,47 +107,115 @@ function buildReceiptHTML(data) {
     year: 'numeric',
   });
 
-  const pixInfo = [];
-  if (!isDinheiro) {
-    if (pixKey) pixInfo.push(`<tr><td class="label">Chave PIX:</td><td>${pixKey}</td></tr>`);
-    if (agenciaConta) pixInfo.push(`<tr><td class="label">Agência / Conta:</td><td>${agenciaConta}</td></tr>`);
-    if (bankName) pixInfo.push(`<tr><td class="label">Banco:</td><td>${bankName}</td></tr>`);
-    if (paymentDate) pixInfo.push(`<tr><td class="label">Data do PIX:</td><td>${paymentDate}${paymentTime ? ' às ' + paymentTime : ''}</td></tr>`);
-    if (transactionId) pixInfo.push(`<tr><td class="label">ID da Transação:</td><td style="word-break:break-all;font-size:9pt;">${transactionId}</td></tr>`);
-  }
-
-  // Bloco de pagamento em dinheiro
-  const dinheiroBlock = isDinheiro ? `
-    <div class="pix-box" style="border-left-color:#e6a817;">
-      <h3 style="color:#c47e00;">Pagamento em Dinheiro</h3>
-      <table>
-        ${paymentDate ? `<tr><td class="label">Data do pagamento:</td><td>${paymentDate}</td></tr>` : ''}
-      </table>
-    </div>` : '';
-
-  let pagamentoReferencia = `<strong> ${valeType}</strong>`;
-  let extraInfoBlock = '';
-
+  // Texto da referência (pode ter extras para Férias/13º)
+  let pagamentoReferencia = valeType || '—';
+  let extraDetails = '';
   if (valeType === 'Férias' && extraData) {
-    extraInfoBlock = `
-    <div class="pix-box" style="border-left-color:#3498db;">
-      <h3 style="color:#2980b9;">Detalhes das Férias</h3>
-      <table>
-        ${extraData.periodoAquisitivo ? `<tr><td class="label">Período Aquisitivo:</td><td>${extraData.periodoAquisitivo}</td></tr>` : ''}
-        ${extraData.periodoGozo ? `<tr><td class="label">Período de Gozo:</td><td>${extraData.periodoGozo}</td></tr>` : ''}
-      </table>
-    </div>`;
-    pagamentoReferencia = `<strong> Férias (com 1/3 Constitucional)</strong>`;
+    pagamentoReferencia = 'Férias (com 1/3 Constitucional)';
+    const linhas = [];
+    if (extraData.periodoAquisitivo) linhas.push(`Período Aquisitivo: <strong>${extraData.periodoAquisitivo}</strong>`);
+    if (extraData.periodoGozo) linhas.push(`Período de Gozo: <strong>${extraData.periodoGozo}</strong>`);
+    if (linhas.length) extraDetails = linhas.join(' &nbsp;·&nbsp; ');
   } else if (valeType === '13º Salário' && extraData) {
-    extraInfoBlock = `
-    <div class="pix-box" style="border-left-color:#e74c3c;">
-      <h3 style="color:#c0392b;">Detalhes do 13º Salário</h3>
-      <table>
-        ${extraData.anoBase ? `<tr><td class="label">Ano de Referência:</td><td>${extraData.anoBase}</td></tr>` : ''}
-      </table>
-    </div>`;
-    pagamentoReferencia = `<strong> ${extraData.parcelaDecimo ? extraData.parcelaDecimo + ' do ' : ''}13º Salário</strong>`;
+    pagamentoReferencia = `${extraData.parcelaDecimo ? extraData.parcelaDecimo + ' do ' : ''}13º Salário`;
+    if (extraData.anoBase) extraDetails = `Ano de Referência: <strong>${extraData.anoBase}</strong>`;
   }
+
+  // Linhas do bloco de pagamento
+  const paymentRows = [];
+  if (isDinheiro) {
+    paymentRows.push(['Forma', 'Dinheiro']);
+    if (paymentDate) paymentRows.push(['Data', paymentDate]);
+  } else {
+    if (pixKey) paymentRows.push(['Chave PIX', pixKey]);
+    if (agenciaConta) paymentRows.push(['Ag/Conta', agenciaConta]);
+    if (bankName) paymentRows.push(['Banco', bankName]);
+    if (paymentDate) paymentRows.push(['Data', `${paymentDate}${paymentTime ? ' às ' + paymentTime : ''}`]);
+    if (transactionId) paymentRows.push(['ID Transação', `<span class="mono-small">${transactionId}</span>`]);
+  }
+
+  const paymentRowsHTML = paymentRows.map(([k, v]) =>
+    `<dt>${k}</dt><dd>${v}</dd>`
+  ).join('');
+
+  const beneficRows = [
+    ['Nome', employeeName || '—'],
+  ];
+  if (employeeCpf) beneficRows.push(['CPF', employeeCpf]);
+  if (cargo) beneficRows.push(['Cargo', cargo]);
+  if (setor) beneficRows.push(['Setor', setor]);
+  const beneficRowsHTML = beneficRows.map(([k, v]) =>
+    `<dt>${k}</dt><dd>${v}</dd>`
+  ).join('');
+
+  const renderVia = (viaLabel) => `
+    <div class="block">
+      <div class="header">
+        <div class="header-left">
+          <img src="${LOGO_DATA_URL}" alt="Gosto Paraense" class="logo" />
+          <div>
+            <div class="company-name">${companyName || 'EMPRESA'}</div>
+            ${companyCnpj ? `<div class="company-meta">CNPJ ${companyCnpj}</div>` : ''}
+            ${companyAddress ? `<div class="company-meta">${companyAddress}</div>` : ''}
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="doc-kicker">Recibo de Pagamento</div>
+          <div class="doc-number">Nº ${receiptNumber}</div>
+          <div class="doc-via">${viaLabel}</div>
+        </div>
+      </div>
+      <div class="rule"></div>
+      <div class="rule-accent"></div>
+
+      <div class="amount-row">
+        <div>
+          <div class="kicker">Valor recebido</div>
+          <div class="amount-value">${amount}</div>
+          <div class="amount-extenso">(${amountExtenso})</div>
+        </div>
+        <div class="date-block">
+          <div class="kicker">Data</div>
+          <div class="date-value">${paymentDate || '—'}</div>
+          <div class="date-meta">${isDinheiro ? 'Pagamento em dinheiro' : 'Pagamento via PIX'}</div>
+        </div>
+      </div>
+
+      <p class="body">
+        Recebi(mos) da empresa <strong>${companyName || 'EMPRESA'}</strong>${companyCnpj ? `, inscrita no CNPJ sob o nº <strong>${companyCnpj}</strong>` : ''},
+        a importância acima discriminada, referente ao pagamento de <strong>${pagamentoReferencia}</strong>,
+        ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme dados abaixo.'}
+      </p>
+
+      ${extraDetails ? `<div class="extra-details">${extraDetails}</div>` : ''}
+
+      <div class="detail-grid">
+        <div class="detail-col">
+          <div class="group-label">Beneficiário</div>
+          <dl>${beneficRowsHTML}</dl>
+        </div>
+        <div class="detail-col">
+          <div class="group-label">${isDinheiro ? 'Pagamento' : 'Transação PIX'}</div>
+          <dl>${paymentRowsHTML}</dl>
+        </div>
+      </div>
+
+      <div class="sigs">
+        <div class="sig-col">
+          <div class="sig-line"></div>
+          <div class="sig-name">${employeeName}</div>
+          <div class="sig-role">${cargo || 'Funcionário(a)'}${setor ? ' — ' + setor : ''}</div>
+        </div>
+        <div class="sig-col">
+          <div class="sig-line"></div>
+          <div class="sig-name">${companyName || 'EMPRESA'}</div>
+          <div class="sig-role">Responsável pela empresa</div>
+        </div>
+      </div>
+
+      <div class="footer-line">Emitido em ${today}</div>
+    </div>
+  `;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -157,263 +223,239 @@ function buildReceiptHTML(data) {
   <meta charset="UTF-8" />
   <title>Recibo Nº ${receiptNumber}</title>
   <style>
-    @page {
-      size: A4;
-      margin: 10mm 15mm;
-    }
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    @page { size: A4; margin: 10mm 14mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Arial', sans-serif;
-      font-size: 10pt;
-      color: #1a1a1a;
-      background: white;
+      font-family: 'Helvetica', 'Arial', sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.5;
+      color: #1a1612;
+      background: #fbfaf7;
     }
 
-    /* ─── RECIBO (ocupa metade da folha A4) ─── */
-    .receipt-block {
+    .block {
       width: 100%;
-      padding: 4mm 0;
+      padding: 2mm 0;
       page-break-inside: avoid;
+      display: flex;
+      flex-direction: column;
     }
 
-    /* Linha pontilhada entre as 2 vias */
-    .divider {
-      border: none;
-      border-top: 2px dashed #555;
-      margin: 2mm 0;
-    }
-    .divider-label {
-      text-align: center;
-      font-size: 7.5pt;
-      color: #555;
-      margin: 1mm 0;
-    }
-
-    /* Cabeçalho */
     .header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 3mm;
-      padding-bottom: 2mm;
-      border-bottom: 2px solid #1a1a1a;
+      gap: 8mm;
     }
-    .company-info h1 {
-      font-size: 12pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+    .header-left {
+      display: flex;
+      gap: 4mm;
+      align-items: flex-start;
     }
-    .company-info p {
-      font-size: 8pt;
-      color: #555;
-      margin-top: 1px;
+    .logo {
+      width: 18mm;
+      height: 18mm;
+      object-fit: contain;
+      flex-shrink: 0;
+      border-radius: 50%;
     }
-    .receipt-meta {
-      text-align: right;
-    }
-    .receipt-meta .receipt-title {
-      font-size: 11pt;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: #1a1a1a;
-    }
-    .receipt-meta .receipt-number {
-      font-size: 9pt;
-      color: #444;
-      margin-top: 2px;
-    }
-
-    /* Corpo do recibo */
-    .body-text {
-      line-height: 1.6;
-      margin: 3mm 0;
-      text-align: justify;
-    }
-    .body-text strong {
-      text-decoration: underline;
-    }
-
-    /* Bloco PIX */
-    .pix-box {
-      background: #f5f5f5;
-      border: 1px solid #ccc;
-      border-left: 4px solid #00b386;
-      border-radius: 4px;
-      padding: 2mm 4mm;
-      margin: 2mm 0;
-      font-size: 9pt;
-    }
-    .pix-box h3 {
-      font-size: 8.5pt;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #00b386;
+    .company-name {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 13pt;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      color: #1a1612;
+      line-height: 1.15;
       margin-bottom: 2px;
     }
-    .pix-box table {
-      width: 100%;
-      border-collapse: collapse;
+    .company-meta {
+      font-size: 7.5pt;
+      color: #5a524a;
+      line-height: 1.45;
     }
-    .pix-box td {
-      padding: 1px 4px;
-      vertical-align: top;
+    .header-right {
+      text-align: right;
+      flex-shrink: 0;
     }
-    .pix-box td.label {
+    .doc-kicker {
+      font-size: 6.5pt;
       font-weight: 700;
-      white-space: nowrap;
-      width: 130px;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: #8a8078;
+    }
+    .doc-number {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 14pt;
+      font-weight: 500;
+      color: #1a1612;
+      line-height: 1;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .doc-via {
+      font-size: 7.5pt;
+      color: #5a524a;
+      margin-top: 2px;
+      font-style: italic;
     }
 
-    /* Assinaturas */
-    .signatures {
+    .rule {
+      height: 0.5px;
+      background: #1a1612;
+      margin-top: 4mm;
+    }
+    .rule-accent {
+      height: 1.5px;
+      background: #b01e26;
+      width: 16mm;
+      margin-top: -0.5px;
+    }
+
+    .amount-row {
       display: flex;
       justify-content: space-between;
-      margin-top: 5mm;
-      gap: 10mm;
+      align-items: flex-end;
+      gap: 12mm;
+      margin-top: 6mm;
+      padding-bottom: 5mm;
+      border-bottom: 0.5px solid #efeae0;
     }
-    .sig-block {
-      flex: 1;
-      text-align: center;
-    }
-    .sig-line {
-      border-top: 1px solid #1a1a1a;
-      padding-top: 2px;
-      margin-top: 8mm;
-      font-size: 8.5pt;
-    }
-    .sig-block .sig-name {
+    .kicker {
+      font-size: 6.5pt;
       font-weight: 700;
-      font-size: 9pt;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #8a8078;
+      margin-bottom: 2mm;
     }
-    .sig-block .sig-role {
+    .amount-value {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 26pt;
+      font-weight: 500;
+      color: #1a1612;
+      line-height: 1;
+      letter-spacing: -0.8px;
+      font-variant-numeric: tabular-nums;
+    }
+    .amount-extenso {
       font-size: 8pt;
-      color: #555;
+      font-style: italic;
+      color: #5a524a;
+      margin-top: 2mm;
+    }
+    .date-block { text-align: right; }
+    .date-value {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 14pt;
+      font-weight: 500;
+      color: #1a1612;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .date-meta { font-size: 7.5pt; color: #5a524a; margin-top: 1mm; }
+
+    .body {
+      margin-top: 5mm;
+      font-size: 9pt;
+      line-height: 1.65;
+      color: #3a342d;
+      text-align: justify;
     }
 
-    .date-line {
-      text-align: right;
+    .extra-details {
+      margin-top: 3mm;
+      padding: 2mm 3mm;
+      background: #f5f2ec;
+      border-left: 2px solid #b01e26;
       font-size: 8.5pt;
-      color: #555;
-      margin-top: 2mm;
+      color: #3a342d;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10mm;
+      margin-top: 5mm;
+      padding-top: 5mm;
+      border-top: 0.5px solid #efeae0;
+    }
+    .group-label {
+      font-size: 6.5pt;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: #8a8078;
+      margin-bottom: 2.5mm;
+    }
+    dl {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 4mm;
+      row-gap: 1.2mm;
+    }
+    dt {
+      font-size: 7.5pt;
+      color: #8a8078;
+      font-weight: 400;
+    }
+    dd {
+      font-size: 9pt;
+      color: #1a1612;
+      font-weight: 500;
+    }
+    .mono-small {
+      font-family: 'Courier New', monospace;
+      font-size: 7.5pt;
+      word-break: break-all;
+    }
+
+    .sigs {
+      margin-top: 10mm;
+      padding-top: 2mm;
+      display: flex;
+      gap: 12mm;
+    }
+    .sig-col { flex: 1; text-align: center; }
+    .sig-line {
+      border-top: 0.5px solid #1a1612;
+      margin-top: 8mm;
+      margin-bottom: 1.5mm;
+    }
+    .sig-name { font-size: 9pt; font-weight: 700; color: #1a1612; }
+    .sig-role { font-size: 7.5pt; color: #5a524a; margin-top: 1px; }
+
+    .footer-line {
+      font-size: 7.5pt;
+      color: #8a8078;
+      text-align: right;
+      margin-top: 3mm;
+      font-style: italic;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px dashed #b8b0a4;
+      margin: 2mm 0;
+    }
+    .divider-label {
+      text-align: center;
+      font-size: 6.5pt;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #8a8078;
+      font-weight: 500;
+      margin: 1mm 0 2mm;
     }
   </style>
 </head>
 <body>
+  ${renderVia('1ª via — Colaborador')}
 
-  <!-- 1ª VIA -->
-  <div class="receipt-block">
-    <div class="header">
-      <div class="company-info">
-        <h1>${companyName || 'EMPRESA'}</h1>
-        ${companyCnpj ? `<p>CNPJ: ${companyCnpj}</p>` : ''}
-        ${companyAddress ? `<p>${companyAddress}</p>` : ''}
-      </div>
-      <div class="receipt-meta">
-        <div class="receipt-title">Recibo de Pagamento</div>
-        <div class="receipt-number">Nº ${receiptNumber} &nbsp;|&nbsp; 1ª via</div>
-      </div>
-    </div>
-
-    <p class="body-text">
-      Recebi(mos) da empresa <strong>${companyName || 'EMPRESA'}</strong>
-      ${companyCnpj ? `, inscrita no CNPJ sob o nº <strong>${companyCnpj}</strong>,` : ','}
-      a importância de <strong>${amount}</strong>
-      (<em>${amountExtenso}</em>), referente ao pagamento de
-      ${pagamentoReferencia} do(a) funcionário(a)
-      <strong>${employeeName}</strong>,
-      ${employeeCpf ? `CPF: <strong>${employeeCpf}</strong>,` : ''}
-      ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
-      ${setor ? `setor <strong>${setor}</strong>,` : ''}
-      ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}
-    </p>
-
-    ${extraInfoBlock}
-
-    ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
-    <div class="pix-box">
-      <h3>Pagamento via PIX</h3>
-      <table>${pixInfo.join('')}</table>
-    </div>` : '')}
-
-    <div class="signatures">
-      <div class="sig-block">
-        <div class="sig-line">
-          <div class="sig-name">${employeeName}</div>
-          <div class="sig-role">${employeeCpf ? 'CPF: ' + employeeCpf : 'Funcionário(a)'}</div>
-        </div>
-      </div>
-      <div class="sig-block">
-        <div class="sig-line">
-          <div class="sig-name">${companyName || 'EMPRESA'}</div>
-          <div class="sig-role">${companyCnpj ? 'CNPJ: ' + companyCnpj : 'Responsável pela empresa'}</div>
-        </div>
-      </div>
-    </div>
-    <p class="date-line">Emitido em ${today}</p>
-  </div>
-
-  <!-- Separador -->
   <hr class="divider" />
-  <p class="divider-label">Recortar aqui — 2ª via (empresa)</p>
-  <hr class="divider" />
+  <div class="divider-label">recortar · 2ª via empresa</div>
 
-  <!-- 2ª VIA -->
-  <div class="receipt-block">
-    <div class="header">
-      <div class="company-info">
-        <h1>${companyName || 'EMPRESA'}</h1>
-        ${companyCnpj ? `<p>CNPJ: ${companyCnpj}</p>` : ''}
-        ${companyAddress ? `<p>${companyAddress}</p>` : ''}
-      </div>
-      <div class="receipt-meta">
-        <div class="receipt-title">Recibo de Pagamento</div>
-        <div class="receipt-number">Nº ${receiptNumber} &nbsp;|&nbsp; 2ª via</div>
-      </div>
-    </div>
-
-    <p class="body-text">
-      Recebi(mos) da empresa <strong>${companyName || 'EMPRESA'}</strong>
-      ${companyCnpj ? `, inscrita no CNPJ sob o nº <strong>${companyCnpj}</strong>,` : ','}
-      a importância de <strong>${amount}</strong>
-      (<em>${amountExtenso}</em>), referente ao pagamento de
-      ${pagamentoReferencia} do(a) funcionário(a)
-      <strong>${employeeName}</strong>,
-      ${employeeCpf ? `CPF: <strong>${employeeCpf}</strong>,` : ''}
-      ${cargo ? `cargo <strong>${cargo}</strong>,` : ''}
-      ${setor ? `setor <strong>${setor}</strong>,` : ''}
-      ${isDinheiro ? 'realizado em dinheiro.' : 'realizado via PIX conforme comprovante abaixo.'}
-    </p>
-
-    ${extraInfoBlock}
-
-    ${isDinheiro ? dinheiroBlock : (pixInfo.length > 0 ? `
-    <div class="pix-box">
-      <h3>Pagamento via PIX</h3>
-      <table>${pixInfo.join('')}</table>
-    </div>` : '')}
-
-    <div class="signatures">
-      <div class="sig-block">
-        <div class="sig-line">
-          <div class="sig-name">${employeeName}</div>
-          <div class="sig-role">${employeeCpf ? 'CPF: ' + employeeCpf : 'Funcionário(a)'}</div>
-        </div>
-      </div>
-      <div class="sig-block">
-        <div class="sig-line">
-          <div class="sig-name">${companyName || 'EMPRESA'}</div>
-          <div class="sig-role">${companyCnpj ? 'CNPJ: ' + companyCnpj : 'Responsável pela empresa'}</div>
-        </div>
-      </div>
-    </div>
-    <p class="date-line">Emitido em ${today}</p>
-  </div>
-
+  ${renderVia('2ª via — Empresa')}
 </body>
 </html>`;
 }
