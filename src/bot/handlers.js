@@ -401,7 +401,7 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
     resetConversation(userId);
     await bot.sendMessage(
       chatId,
-      '✅ Recibo em dinheiro emitido com sucesso!\n\nEnvie um comprovante PIX ou use /dinheiro para emitir outro.'
+      '✅ Recibo em dinheiro emitido com sucesso!\n\nEnvie um comprovante PIX ou use /novo_recibo para emitir outro.'
     );
   } catch (err) {
     console.error('Erro ao gerar recibo dinheiro:', err);
@@ -513,12 +513,12 @@ function startBot() {
       `👋 *Olá! Sou o bot de emissão de recibos de vale via PIX.*\n\n` +
       `📋 *Como usar:*\n` +
       `1. Configure os dados da empresa com /empresa\n` +
-      `2. Envie a foto ou PDF do comprovante PIX — *ou* use /dinheiro para pagamento em dinheiro\n` +
+      `2. Envie a foto ou PDF do comprovante PIX — *ou* use /novo_recibo para pagamento em dinheiro\n` +
       `3. Responda as perguntas do bot\n` +
       `4. Receba o PDF do recibo pronto para imprimir!\n\n` +
       `📌 *Comandos disponíveis:*\n` +
       `/empresa — Configurar dados da empresa\n` +
-      `/dinheiro — Emitir recibo de pagamento em dinheiro\n` +
+      `/novo_recibo — Emitir recibo de pagamento em dinheiro\n` +
       `/colaboradores — Gerenciar dados dos colaboradores\n` +
       `/historico [Qtd] — Ver últimos recibos (ex: /historico 20)\n` +
       `/buscar Nome — Buscar recibos de um funcionário\n` +
@@ -530,8 +530,8 @@ function startBot() {
     );
   });
 
-  // ─── /dinheiro ──────────────────────────────────────────────────────────
-  bot.onText(/\/dinheiro/, (msg) => {
+  // ─── /novo_recibo ───────────────────────────────────────────────────────
+  bot.onText(/\/novo_recibo/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     if (!isAllowed(userId)) return;
@@ -604,7 +604,7 @@ function startBot() {
     const chatId = msg.chat.id;
     if (!isAllowed(msg.from.id)) return;
     resetConversation(msg.from.id);
-    bot.sendMessage(chatId, '❌ Operação cancelada. Envie um comprovante PIX ou use /dinheiro.');
+    bot.sendMessage(chatId, '❌ Operação cancelada. Envie um comprovante PIX ou use /novo_recibo.');
   });
 
   // ─── /cancelar_recibo ──────────────────────────────────────────────────────
@@ -1348,7 +1348,7 @@ function startBot() {
         if (state === STATES.IDLE) {
           bot.sendMessage(
             chatId,
-            '📎 Envie uma foto ou PDF do comprovante PIX para começar.\n\nOu use /dinheiro para emitir um recibo de pagamento em dinheiro.\n\nUse /start para ver a lista de comandos.'
+            '📎 Envie uma foto ou PDF do comprovante PIX para começar.\n\nOu use /novo_recibo para emitir um recibo de pagamento em dinheiro.\n\nUse /start para ver a lista de comandos.'
           );
         }
         break;
@@ -1528,7 +1528,7 @@ function startBot() {
 
       if (!employee) {
         resetConversation(userId);
-        return bot.sendMessage(chatId, '❌ Colaborador não encontrado. Use /dinheiro para tentar novamente.');
+        return bot.sendMessage(chatId, '❌ Colaborador não encontrado. Use /novo_recibo para tentar novamente.');
       }
 
       setData(userId, 'dinheiroName', employee.name);

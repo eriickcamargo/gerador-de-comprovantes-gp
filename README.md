@@ -47,7 +47,7 @@ docker compose up -d --build
 |---|---|
 | `/start` | Exibe a lista de comandos |
 | `/empresa` | Cadastra ou atualiza os dados da empresa |
-| `/dinheiro` | Emite recibo de pagamento em dinheiro (sem PIX) |
+| `/novo_recibo` | Emite recibo de pagamento em dinheiro (sem PIX) |
 | `/colaboradores` | Gerencia o cadastro de funcionários |
 | `/historico [N]` | Lista os últimos N recibos (padrão: 10, máx: 50) |
 | `/buscar Nome` | Busca recibos pelo nome do funcionário |
