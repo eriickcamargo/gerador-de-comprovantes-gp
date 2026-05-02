@@ -102,6 +102,7 @@ function buildReceiptHTML(data) {
   const isDinheiro = paymentMethod === 'dinheiro';
   const amountExtenso = valorPorExtenso(amount || '');
   const today = new Date().toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
     day: '2-digit',
     month: 'long',
     year: 'numeric',

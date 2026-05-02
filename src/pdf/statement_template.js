@@ -40,6 +40,7 @@ function buildStatementHTML(data, receipts) {
 
   const period = `${monthName(month)}/${year}`;
   const today = new Date().toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
     day: '2-digit',
     month: 'long',
     year: 'numeric',

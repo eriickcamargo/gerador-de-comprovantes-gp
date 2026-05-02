@@ -6,3 +6,4 @@ temp/*.jpg
 temp/*.jpeg
 temp/*.png
 *.sqlite
+CLAUDE.md
