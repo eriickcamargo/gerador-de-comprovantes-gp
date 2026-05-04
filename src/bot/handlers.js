@@ -198,15 +198,33 @@ async function processVoucher(bot, chatId, userId, filePath) {
       );
       setState(userId, STATES.AWAITING_VALE_TYPE);
     } else {
-      // Funcionário novo — coleta CPF
-      await bot.sendMessage(
-        chatId,
-        `👤 Funcionário *${escapeMd(extracted.nome_beneficiario)}* não encontrado.\n\n` +
-        `Qual é o *CPF* deste funcionário? (Ou digite "pular")`,
-
-        { parse_mode: 'Markdown' }
-      );
-      setState(userId, STATES.AWAITING_CPF);
+      const employees = listEmployees();
+      if (employees.length === 0) {
+        // Nenhum colaborador cadastrado — vai direto para cadastro
+        await bot.sendMessage(
+          chatId,
+          `👤 Funcionário *${escapeMd(extracted.nome_beneficiario)}* não encontrado.\n\n` +
+          `Qual é o *CPF* deste funcionário? (Ou digite "pular")`,
+          { parse_mode: 'Markdown' }
+        );
+        setState(userId, STATES.AWAITING_CPF);
+      } else {
+        // Há colaboradores cadastrados — oferece escolha ao operador
+        await bot.sendMessage(
+          chatId,
+          `👤 Colaborador *${escapeMd(extracted.nome_beneficiario)}* não reconhecido.\n\nO que deseja fazer?`,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '➕ Cadastrar novo', callback_data: 'voucher_emp_new' },
+                { text: '📋 Selecionar da lista', callback_data: 'voucher_emp_list' },
+              ]],
+            },
+          }
+        );
+        setState(userId, STATES.AWAITING_EMPLOYEE_ACTION);
+      }
     }
   } catch (err) {
     console.error('Erro ao processar comprovante:', err);
@@ -1507,6 +1525,69 @@ function startBot() {
 
       resetConversation(userId);
       return;
+    }
+
+    if (query.data === 'voucher_emp_new' || query.data === 'voucher_emp_list') {
+      if (getState(userId) !== STATES.AWAITING_EMPLOYEE_ACTION) return;
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      if (query.data === 'voucher_emp_new') {
+        const nome = getData(userId).extracted?.nome_beneficiario;
+        setState(userId, STATES.AWAITING_CPF);
+        return bot.sendMessage(
+          chatId,
+          `Qual é o *CPF* de *${escapeMd(nome)}*? (Ou digite "pular")`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      // Selecionar da lista
+      const employees = listEmployees();
+      const keyboard = [];
+      for (let i = 0; i < employees.length; i += 2) {
+        const row = [{ text: employees[i].name, callback_data: `voucher_sel_${employees[i].id}` }];
+        if (employees[i + 1]) {
+          row.push({ text: employees[i + 1].name, callback_data: `voucher_sel_${employees[i + 1].id}` });
+        }
+        keyboard.push(row);
+      }
+      setState(userId, STATES.AWAITING_VOUCHER_EMP_SELECT);
+      return bot.sendMessage(
+        chatId,
+        '📋 Selecione o *colaborador*:',
+        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }
+      );
+    }
+
+    if (query.data.startsWith('voucher_sel_')) {
+      if (getState(userId) !== STATES.AWAITING_VOUCHER_EMP_SELECT) return;
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      const empId = parseInt(query.data.replace('voucher_sel_', ''), 10);
+      const employee = getEmployeeById(empId);
+
+      if (!employee) {
+        resetConversation(userId);
+        return bot.sendMessage(chatId, '❌ Colaborador não encontrado. Envie o comprovante novamente.');
+      }
+
+      setData(userId, 'employee', employee);
+      setState(userId, STATES.AWAITING_VALE_TYPE);
+      return bot.sendMessage(
+        chatId,
+        `✅ *${escapeMd(employee.name)}* selecionado\n` +
+        `Cargo: *${escapeMd(employee.cargo)}* | Setor: *${escapeMd(employee.setor)}*\n\n` +
+        `Selecione o tipo de vale:`,
+        { parse_mode: 'Markdown', reply_markup: valeKeyboard() }
+      );
     }
 
     if (query.data.startsWith('dinheiro_emp_') || query.data === 'dinheiro_new') {
