@@ -253,7 +253,7 @@ async function finishAndSendReceipt(bot, chatId, userId) {
       companyName: company.name || 'EMPRESA',
       companyCnpj: company.cnpj || '',
       companyAddress: company.address || '',
-      employeeName: extracted.nome_beneficiario,
+      employeeName: employee.name || extracted.nome_beneficiario,
       cargo: employee.cargo || data.cargo || '',
       setor: employee.setor || data.setor || '',
       amount: extracted.valor,
