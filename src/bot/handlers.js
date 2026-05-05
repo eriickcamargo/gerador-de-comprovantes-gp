@@ -1820,6 +1820,15 @@ function startBot() {
         break;
       }
 
+      case STATES.AWAITING_FECHAMENTO_PIX_VOUCHER: {
+        bot.sendMessage(
+          chatId,
+          '📎 Aguardando o comprovante PIX. Envie uma foto ou PDF.\n\nUse o botão *❌ Cancelar envio* ou /cancelar para abortar.',
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
+
       default: {
         if (state === STATES.IDLE) {
           bot.sendMessage(
@@ -2313,6 +2322,13 @@ function startBot() {
       return;
     }
 
+    if (query.data === 'fechamento_pix_voltar') {
+      if (getState(userId) !== STATES.AWAITING_FECHAMENTO_PIX_VOUCHER) return;
+      setState(userId, STATES.AWAITING_FECHAMENTO_CONFIRM);
+      await sendFechamentoPixSummary(bot, chatId, userId);
+      return;
+    }
+
     if (query.data === 'fechamento_cancelar') {
       if (getState(userId) !== STATES.AWAITING_FECHAMENTO_CONFIRM) return;
       await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
@@ -2352,7 +2368,14 @@ function startBot() {
         return bot.sendMessage(
           chatId,
           `📲 Envie o *comprovante PIX* de *${escapeMd(item.emp.name)}*\n💰 Valor: *${formatBRL(item.balance)}*`,
-          { parse_mode: 'Markdown' }
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '❌ Cancelar envio', callback_data: 'fechamento_pix_voltar' },
+              ]],
+            },
+          }
         );
       }
 
