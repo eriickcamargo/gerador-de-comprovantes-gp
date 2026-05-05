@@ -100,6 +100,18 @@ function getReceiptsByEmployeeAndPeriod(employeeName, month, year) {
   );
 }
 
+function getSumByEmployeeAndPeriod(employeeName, month, year) {
+  const receipts = getReceiptsByEmployeeAndPeriod(employeeName, month, year);
+  return receipts
+    .filter(r => r.status !== 'cancelled')
+    .reduce((sum, r) => {
+      const val = parseFloat(
+        String(r.amount || '0').replace('R$', '').replace(/\./g, '').replace(',', '.').trim()
+      ) || 0;
+      return sum + val;
+    }, 0);
+}
+
 function cancelReceiptByNumber(receiptNumber) {
   db.run(`UPDATE receipts SET status = 'cancelled' WHERE receipt_number = ?`, [receiptNumber]);
   return getReceiptByNumber(receiptNumber);
@@ -126,6 +138,7 @@ module.exports = {
   listReceipts,
   searchReceiptsByEmployee,
   getReceiptsByEmployeeAndPeriod,
+  getSumByEmployeeAndPeriod,
   cancelReceiptByNumber,
   updateReceipt,
 };

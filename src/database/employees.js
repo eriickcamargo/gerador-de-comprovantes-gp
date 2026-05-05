@@ -20,12 +20,17 @@ function getEmployeeById(id) {
   return db.get('SELECT * FROM employees WHERE id = ?', [id]) || null;
 }
 
-function saveEmployee({ id, name, cpf, cargo, setor }) {
+function saveEmployee({ id, name, cpf, cargo, setor, salary }) {
+  const salaryVal = salary != null ? Number(salary) || 0 : null;
+
   if (id) {
-    db.run(
-      `UPDATE employees SET name = ?, cpf = ?, cargo = ?, setor = ?, updated_at = datetime('now') WHERE id = ?`,
-      [name, cpf, cargo, setor, id]
-    );
+    const setCols = salaryVal != null
+      ? `name = ?, cpf = ?, cargo = ?, setor = ?, salary = ?, updated_at = datetime('now')`
+      : `name = ?, cpf = ?, cargo = ?, setor = ?, updated_at = datetime('now')`;
+    const params = salaryVal != null
+      ? [name, cpf, cargo, setor, salaryVal, id]
+      : [name, cpf, cargo, setor, id];
+    db.run(`UPDATE employees SET ${setCols} WHERE id = ?`, params);
     return;
   }
 
@@ -34,14 +39,17 @@ function saveEmployee({ id, name, cpf, cargo, setor }) {
     [name]
   );
   if (existing) {
-    db.run(
-      `UPDATE employees SET cpf = ?, cargo = ?, setor = ?, updated_at = datetime('now') WHERE LOWER(name) = LOWER(?)`,
-      [cpf, cargo, setor, name]
-    );
+    const setCols = salaryVal != null
+      ? `cpf = ?, cargo = ?, setor = ?, salary = ?, updated_at = datetime('now')`
+      : `cpf = ?, cargo = ?, setor = ?, updated_at = datetime('now')`;
+    const params = salaryVal != null
+      ? [cpf, cargo, setor, salaryVal, name]
+      : [cpf, cargo, setor, name];
+    db.run(`UPDATE employees SET ${setCols} WHERE LOWER(name) = LOWER(?)`, params);
   } else {
     db.run(
-      'INSERT INTO employees (name, cpf, cargo, setor) VALUES (?, ?, ?, ?)',
-      [name, cpf, cargo, setor]
+      'INSERT INTO employees (name, cpf, cargo, setor, salary) VALUES (?, ?, ?, ?, ?)',
+      [name, cpf, cargo, setor, salaryVal || 0]
     );
   }
 }

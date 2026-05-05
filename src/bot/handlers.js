@@ -7,7 +7,7 @@ const { extractFromVoucher } = require('../ai/extractor');
 const { generatePDF, generateStatementPDF, cleanupFile } = require('../pdf/generator');
 const { findEmployee, saveEmployee, listEmployees, deleteEmployee, getEmployeeById } = require('../database/employees');
 const { getCompany, saveCompany } = require('../database/company');
-const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, cancelReceiptByNumber, updateReceipt } = require('../database/receipts');
+const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, getSumByEmployeeAndPeriod, cancelReceiptByNumber, updateReceipt } = require('../database/receipts');
 const { STATES, getState, setState, getData, setData, resetConversation } = require('./conversations');
 
 const TEMP_DIR = path.join(__dirname, '../../temp');
@@ -32,6 +32,16 @@ function todayBR() {
 function escapeMd(text) {
   if (!text) return '';
   return String(text).replace(/([*_`\[])/g, '\\$1');
+}
+
+function parseAmount(str) {
+  if (!str) return 0;
+  return parseFloat(String(str).replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0;
+}
+
+function formatBRL(value) {
+  const num = Number(value) || 0;
+  return 'R$ ' + num.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 // IDs de usuários autorizados (carregados do .env)
@@ -541,6 +551,7 @@ function startBot() {
       `/historico [Qtd] — Ver últimos recibos (ex: /historico 20)\n` +
       `/buscar Nome — Buscar recibos de um funcionário\n` +
       `/extrato — Gerar extrato mensal de um funcionário\n` +
+      `/fechamento — Calcular saldo e emitir recibos de salário do mês\n` +
       `/editar_recibo NUMERO — Editar e re-emitir um recibo (ex: /editar_recibo 202604-001)\n` +
       `/cancelar_recibo NUMERO — Cancelar um recibo emitido (ex: /cancelar_recibo 202604-001)\n` +
       `/cancelar — Cancelar operação atual`,
@@ -854,6 +865,37 @@ function startBot() {
     setState(userId, STATES.AWAITING_EMPRESA_NAME);
   });
 
+  // ─── /fechamento ──────────────────────────────────────────────────────────
+  bot.onText(/\/fechamento/, (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAllowed(userId)) return;
+
+    const company = getCompany();
+    if (!company || !company.name) {
+      return bot.sendMessage(chatId,
+        '⚠️ Você ainda não configurou os dados da empresa.\nUse /empresa primeiro.');
+    }
+
+    const employees = listEmployees();
+    if (employees.length === 0) {
+      return bot.sendMessage(chatId, '⚠️ Nenhum colaborador cadastrado. Use /colaboradores primeiro.');
+    }
+
+    resetConversation(userId);
+    setState(userId, STATES.AWAITING_FECHAMENTO_PERIOD);
+
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+
+    bot.sendMessage(
+      chatId,
+      `💼 *Fechamento de Salários*\n\nInforme o período no formato MM/AAAA:\n_(mês atual: ${mm}/${yyyy})_`,
+      { parse_mode: 'Markdown' }
+    );
+  });
+
   // ─── /colaboradores ───────────────────────────────────────────────────────
   bot.onText(/\/colaboradores/, (msg) => {
     const chatId = msg.chat.id;
@@ -978,6 +1020,72 @@ function startBot() {
         break;
       }
 
+      // ─── Fluxo de Fechamento Mensal ───
+      case STATES.AWAITING_FECHAMENTO_PERIOD: {
+        const periodMatch = msg.text.trim().match(/^(\d{2})\/(\d{4})$/);
+        if (!periodMatch) {
+          return bot.sendMessage(chatId, '⚠️ Formato inválido. Use MM/AAAA (ex: 05/2026).');
+        }
+        const [, month, year] = periodMatch;
+        const monthNum = parseInt(month, 10);
+        if (monthNum < 1 || monthNum > 12) {
+          return bot.sendMessage(chatId, '⚠️ Mês inválido. Use um número entre 01 e 12.');
+        }
+
+        const employees = listEmployees();
+        const monthNames = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+          'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        const monthLabel = monthNames[monthNum];
+
+        const items = employees.map(emp => {
+          const advances = getSumByEmployeeAndPeriod(emp.name, month, year);
+          const salary = emp.salary || 0;
+          const balance = salary - advances;
+          return { emp, salary, advances, balance };
+        });
+
+        setData(userId, 'fechamentoMonth', month);
+        setData(userId, 'fechamentoYear', year);
+        setData(userId, 'fechamentoItems', items);
+        setState(userId, STATES.AWAITING_FECHAMENTO_CONFIRM);
+
+        let text = `💼 *Fechamento — ${monthLabel}/${year}*\n\n`;
+        const noSalary = items.filter(i => i.salary === 0);
+        if (noSalary.length > 0) {
+          text += `⚠️ _Sem salário cadastrado: ${noSalary.map(i => i.emp.name).join(', ')}_\n\n`;
+        }
+        items.forEach(({ emp, salary, advances, balance }) => {
+          const balanceLabel = balance < 0 ? `⚠️ ${formatBRL(balance)}` : formatBRL(balance);
+          text += `👤 *${escapeMd(emp.name)}*\n`;
+          text += `   Salário: ${formatBRL(salary)} | Adiant.: ${formatBRL(advances)} | Saldo: *${balanceLabel}*\n\n`;
+        });
+
+        const eligible = items.filter(i => i.balance > 0);
+
+        const keyboard = [];
+        if (eligible.length > 1) {
+          keyboard.push([{ text: `✅ Gerar Todos (${eligible.length} colaboradores)`, callback_data: 'fechamento_todos' }]);
+        }
+        for (let i = 0; i < eligible.length; i += 2) {
+          const row = [{ text: eligible[i].emp.name, callback_data: `fechamento_emp_${eligible[i].emp.id}` }];
+          if (eligible[i + 1]) {
+            row.push({ text: eligible[i + 1].emp.name, callback_data: `fechamento_emp_${eligible[i + 1].emp.id}` });
+          }
+          keyboard.push(row);
+        }
+        keyboard.push([{ text: '❌ Cancelar', callback_data: 'fechamento_cancelar' }]);
+
+        if (eligible.length === 0) {
+          text += '_Nenhum colaborador com saldo positivo para receber neste período._';
+        }
+
+        bot.sendMessage(chatId, text, {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: keyboard },
+        });
+        break;
+      }
+
       // ─── Fluxo de Gerenciamento de Colaboradores ───
       case STATES.AWAITING_COLAB_NOME: {
         const input = msg.text.trim();
@@ -1038,10 +1146,38 @@ function startBot() {
         const d = getData(userId);
         const editId = d.editColabId;
         const employee = editId ? getEmployeeById(editId) : null;
-        
+
         let setorFinal = input;
         if (editId && input.toLowerCase() === 'manter') {
           setorFinal = employee.setor || '';
+        }
+
+        setData(userId, 'colabSetor', setorFinal);
+        setState(userId, STATES.AWAITING_COLAB_SALARY);
+
+        const currentSalary = employee ? formatBRL(employee.salary || 0) : null;
+        const salaryHint = editId ? ` (atual: ${currentSalary}, ou "manter")` : ` (ou "pular")`;
+        bot.sendMessage(
+          chatId,
+          `✅ Setor: *${escapeMd(setorFinal)}*\n\nDigite o *Salário*${salaryHint}:`,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
+
+      case STATES.AWAITING_COLAB_SALARY: {
+        const input = msg.text.trim();
+        const d = getData(userId);
+        const editId = d.editColabId;
+        const employee = editId ? getEmployeeById(editId) : null;
+
+        let salaryFinal = 0;
+        if (editId && input.toLowerCase() === 'manter') {
+          salaryFinal = employee ? (employee.salary || 0) : 0;
+        } else if (input.toLowerCase() === 'pular') {
+          salaryFinal = 0;
+        } else {
+          salaryFinal = parseAmount(input);
         }
 
         saveEmployee({
@@ -1049,14 +1185,19 @@ function startBot() {
           name: d.colabName,
           cpf: d.colabCpf || null,
           cargo: d.colabCargo,
-          setor: setorFinal
+          setor: d.colabSetor,
+          salary: salaryFinal,
         });
 
         resetConversation(userId);
         bot.sendMessage(
           chatId,
           `✅ Colaborador *${editId ? 'atualizado' : 'cadastrado'}* com sucesso!\n\n` +
-          `👤 *${escapeMd(d.colabName)}*\nCPF: ${d.colabCpf || 'Não informado'}\nCargo: ${escapeMd(d.colabCargo)}\nSetor: ${escapeMd(setorFinal)}`,
+          `👤 *${escapeMd(d.colabName)}*\n` +
+          `CPF: ${d.colabCpf || 'Não informado'}\n` +
+          `Cargo: ${escapeMd(d.colabCargo)}\n` +
+          `Setor: ${escapeMd(d.colabSetor)}\n` +
+          `Salário: ${formatBRL(salaryFinal)}`,
           { parse_mode: 'Markdown' }
         );
         break;
@@ -1401,7 +1542,9 @@ function startBot() {
         if (employees.length === 0) return bot.sendMessage(chatId, 'Nenhum funcionário cadastrado.');
         let text = '📋 *Lista de Colaboradores:*\n\n';
         employees.forEach(e => {
-          text += `👤 *${e.name}*\nCPF: ${e.cpf || 'Não informado'} | Cargo: ${e.cargo}\n\n`;
+          text += `👤 *${escapeMd(e.name)}*\n`;
+          text += `CPF: ${e.cpf || 'Não informado'} | Cargo: ${escapeMd(e.cargo || '—')}\n`;
+          text += `Salário: ${formatBRL(e.salary || 0)}\n\n`;
         });
         resetConversation(userId);
         return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
@@ -1779,6 +1922,151 @@ function startBot() {
 
       await bot.sendMessage(chatId, `✅ Tipo selecionado: *Vale ${valeType}*`, { parse_mode: 'Markdown' });
       await finishAndSendReceipt(bot, chatId, userId);
+    }
+
+    // ─── Callbacks do /fechamento ────────────────────────────────────────────
+    if (query.data === 'fechamento_cancelar') {
+      if (getState(userId) !== STATES.AWAITING_FECHAMENTO_CONFIRM) return;
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+      resetConversation(userId);
+      return bot.sendMessage(chatId, '❌ Fechamento cancelado.');
+    }
+
+    if (query.data === 'fechamento_todos' || query.data.startsWith('fechamento_emp_')) {
+      if (getState(userId) !== STATES.AWAITING_FECHAMENTO_CONFIRM) return;
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      const d = getData(userId);
+      const items = d.fechamentoItems || [];
+
+      let toProcess = [];
+      if (query.data === 'fechamento_todos') {
+        toProcess = items.filter(i => i.balance > 0);
+      } else {
+        const empId = parseInt(query.data.replace('fechamento_emp_', ''), 10);
+        const item = items.find(i => i.emp.id === empId);
+        if (item && item.balance > 0) toProcess = [item];
+      }
+
+      if (toProcess.length === 0) {
+        resetConversation(userId);
+        return bot.sendMessage(chatId, '⚠️ Nenhum colaborador com saldo positivo selecionado.');
+      }
+
+      setState(userId, STATES.PROCESSING);
+      await bot.sendMessage(chatId, `⏳ Gerando recibos e extratos para ${toProcess.length} colaborador(es)...`);
+
+      const company = getCompany() || {};
+      const today = todayBR();
+      const monthNames = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      const monthLabel = monthNames[parseInt(d.fechamentoMonth, 10)];
+      const generated = [];
+      const failed = [];
+
+      for (const { emp, advances, balance } of toProcess) {
+        try {
+          const amountStr = formatBRL(balance);
+
+          const savedReceipt = saveReceipt({
+            employee_name: emp.name,
+            cargo: emp.cargo || '',
+            setor: emp.setor || '',
+            amount: amountStr,
+            vale_type: 'Salário',
+            payment_date: today,
+            payment_method: 'dinheiro',
+            company_name: company.name || 'EMPRESA',
+            company_cnpj: company.cnpj || '',
+            telegram_user_id: String(userId),
+          });
+
+          const receiptData = {
+            receiptNumber:  savedReceipt.receipt_number,
+            companyName:    company.name    || 'EMPRESA',
+            companyCnpj:    company.cnpj    || '',
+            companyAddress: company.address || '',
+            employeeName:   emp.name,
+            employeeCpf:    emp.cpf || '',
+            cargo:          emp.cargo  || '',
+            setor:          emp.setor  || '',
+            amount:         amountStr,
+            valeType:       'Salário',
+            paymentDate:    today,
+            paymentMethod:  'dinheiro',
+          };
+
+          // PDF 1: extrato do período
+          const allReceipts = getReceiptsByEmployeeAndPeriod(emp.name, d.fechamentoMonth, d.fechamentoYear);
+          const statementData = {
+            companyName:    company.name    || 'EMPRESA',
+            companyCnpj:    company.cnpj    || '',
+            companyAddress: company.address || '',
+            employeeName:   emp.name,
+            cargo:          emp.cargo  || '',
+            setor:          emp.setor  || '',
+            month:          d.fechamentoMonth,
+            year:           d.fechamentoYear,
+          };
+          const statementPath = await generateStatementPDF(statementData, allReceipts);
+          await bot.sendDocument(
+            chatId,
+            fs.createReadStream(statementPath),
+            {
+              caption:
+                `📊 *Extrato — ${escapeMd(emp.name)}*\n` +
+                `📅 ${monthLabel}/${d.fechamentoYear}\n` +
+                `🧾 ${allReceipts.length} recibo(s) | Total adiantado: ${formatBRL(advances)}`,
+              parse_mode: 'Markdown',
+            },
+            { filename: `extrato-${emp.name.replace(/\s+/g, '_')}-${d.fechamentoMonth}-${d.fechamentoYear}.pdf`, contentType: 'application/pdf' }
+          );
+          cleanupFile(statementPath);
+
+          // PDF 2: recibo de salário
+          const receiptPath = await generatePDF(receiptData, savedReceipt.receipt_number);
+          await bot.sendDocument(
+            chatId,
+            fs.createReadStream(receiptPath),
+            {
+              caption:
+                `✅ *Recibo Nº ${savedReceipt.receipt_number}*\n` +
+                `👤 ${emp.name}\n` +
+                `💰 ${amountStr} — Salário\n` +
+                `📅 ${today}`,
+              parse_mode: 'Markdown',
+            },
+            { filename: `recibo-${savedReceipt.receipt_number}.pdf`, contentType: 'application/pdf' }
+          );
+          cleanupFile(receiptPath);
+
+          generated.push(`${emp.name} — ${amountStr}`);
+        } catch (err) {
+          console.error(`Erro no fechamento de ${emp.name}:`, err);
+          failed.push(emp.name);
+        }
+      }
+
+      resetConversation(userId);
+
+      let summary = `✅ *Fechamento concluído!*\n\n`;
+      if (generated.length > 0) {
+        summary += `📄 *Recibos gerados (${generated.length}):*\n`;
+        generated.forEach(line => { summary += `• ${line}\n`; });
+      }
+      if (failed.length > 0) {
+        summary += `\n❌ *Falha ao gerar (${failed.length}):*\n`;
+        failed.forEach(name => { summary += `• ${name}\n`; });
+      }
+
+      return bot.sendMessage(chatId, summary, { parse_mode: 'Markdown' });
     }
   });
 
