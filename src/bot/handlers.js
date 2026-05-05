@@ -527,6 +527,195 @@ async function finishEditAndResendReceipt(bot, chatId, userId) {
   }
 }
 
+/**
+ * Monta e envia o resumo do fechamento PIX com os botões individuais.
+ * Chamado ao entrar no fluxo PIX e após cada comprovante processado.
+ */
+async function sendFechamentoPixSummary(bot, chatId, userId) {
+  const d = getData(userId);
+  const items = d.fechamentoItems || [];
+  const monthNames = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const monthLabel = monthNames[parseInt(d.fechamentoMonth, 10)];
+
+  let text = `💼 *Fechamento PIX — ${monthLabel}/${d.fechamentoYear}*\n\n`;
+
+  const noSalary = items.filter(i => !i.processed && i.salary === 0);
+  if (noSalary.length > 0) {
+    text += `⚠️ _Sem salário cadastrado: ${noSalary.map(i => i.emp.name).join(', ')}_\n\n`;
+  }
+
+  items.forEach(({ emp, salary, advances, balance, processed }) => {
+    if (processed) {
+      text += `✅ *${escapeMd(emp.name)}* — processado\n\n`;
+    } else {
+      const balanceLabel = balance < 0 ? `⚠️ ${formatBRL(balance)}` : formatBRL(balance);
+      text += `👤 *${escapeMd(emp.name)}*\n`;
+      text += `   Salário: ${formatBRL(salary)} | Adiant.: ${formatBRL(advances)} | Saldo: *${balanceLabel}*\n\n`;
+    }
+  });
+
+  const remaining = items.filter(i => !i.processed && i.balance > 0);
+
+  if (remaining.length === 0) {
+    text += '_Todos os colaboradores foram processados._';
+  }
+
+  const keyboard = [];
+  for (let i = 0; i < remaining.length; i += 2) {
+    const row = [{ text: remaining[i].emp.name, callback_data: `fechamento_emp_${remaining[i].emp.id}` }];
+    if (remaining[i + 1]) {
+      row.push({ text: remaining[i + 1].emp.name, callback_data: `fechamento_emp_${remaining[i + 1].emp.id}` });
+    }
+    keyboard.push(row);
+  }
+  keyboard.push([{ text: '🔚 Encerrar fechamento', callback_data: 'fechamento_cancelar' }]);
+
+  await bot.sendMessage(chatId, text, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard },
+  });
+}
+
+/**
+ * Processa o comprovante PIX enviado durante o fechamento de salário.
+ */
+async function processarVoucherFechamentoPix(bot, chatId, userId, filePath) {
+  const d = getData(userId);
+  const current = d.fechamentoPixCurrent;
+  const company = getCompany() || {};
+
+  try {
+    await bot.sendMessage(
+      chatId,
+      `⏳ Processando comprovante de *${escapeMd(current.emp.name)}*...`,
+      { parse_mode: 'Markdown' }
+    );
+
+    const extracted = await extractFromVoucher(filePath);
+    cleanupFile(filePath);
+
+    const amountStr   = formatBRL(current.balance);
+    const paymentDate = extracted.data || todayBR();
+
+    const savedReceipt = saveReceipt({
+      employee_name:    current.emp.name,
+      cargo:            current.emp.cargo || '',
+      setor:            current.emp.setor || '',
+      amount:           amountStr,
+      vale_type:        'Salário',
+      payment_date:     paymentDate,
+      payment_time:     extracted.hora || null,
+      payment_method:   'pix',
+      pix_key:          extracted.chave_pix || null,
+      agencia_conta:    extracted.agencia_conta || null,
+      transaction_id:   extracted.id_transacao || null,
+      bank_name:        extracted.banco_beneficiario || null,
+      company_name:     company.name  || 'EMPRESA',
+      company_cnpj:     company.cnpj  || '',
+      telegram_user_id: String(userId),
+    });
+
+    const receiptData = {
+      receiptNumber:  savedReceipt.receipt_number,
+      companyName:    company.name    || 'EMPRESA',
+      companyCnpj:    company.cnpj    || '',
+      companyAddress: company.address || '',
+      employeeName:   current.emp.name,
+      employeeCpf:    current.emp.cpf || '',
+      cargo:          current.emp.cargo || '',
+      setor:          current.emp.setor || '',
+      amount:         amountStr,
+      valeType:       'Salário',
+      paymentDate,
+      paymentTime:    extracted.hora || null,
+      paymentMethod:  'pix',
+      pixKey:         extracted.chave_pix || null,
+      agenciaConta:   extracted.agencia_conta || null,
+      transactionId:  extracted.id_transacao || null,
+      bankName:       extracted.banco_beneficiario || null,
+    };
+
+    // PDF 1: extrato do período
+    const monthNames = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const monthLabel = monthNames[parseInt(d.fechamentoMonth, 10)];
+    const allReceipts = getReceiptsByEmployeeAndPeriod(current.emp.name, d.fechamentoMonth, d.fechamentoYear);
+    const statementData = {
+      companyName:    company.name    || 'EMPRESA',
+      companyCnpj:    company.cnpj    || '',
+      companyAddress: company.address || '',
+      employeeName:   current.emp.name,
+      cargo:          current.emp.cargo || '',
+      setor:          current.emp.setor || '',
+      month:          d.fechamentoMonth,
+      year:           d.fechamentoYear,
+    };
+    const statementPath = await generateStatementPDF(statementData, allReceipts);
+    await bot.sendDocument(
+      chatId,
+      fs.createReadStream(statementPath),
+      {
+        caption:
+          `📊 *Extrato — ${escapeMd(current.emp.name)}*\n` +
+          `📅 ${monthLabel}/${d.fechamentoYear}\n` +
+          `🧾 ${allReceipts.length} recibo(s) | Total adiantado: ${formatBRL(current.advances)}`,
+        parse_mode: 'Markdown',
+      },
+      { filename: `extrato-${current.emp.name.replace(/\s+/g, '_')}-${d.fechamentoMonth}-${d.fechamentoYear}.pdf`, contentType: 'application/pdf' }
+    );
+    cleanupFile(statementPath);
+
+    // PDF 2: recibo de salário
+    const receiptPath = await generatePDF(receiptData, savedReceipt.receipt_number);
+    await bot.sendDocument(
+      chatId,
+      fs.createReadStream(receiptPath),
+      {
+        caption:
+          `✅ *Recibo Nº ${savedReceipt.receipt_number}*\n` +
+          `👤 ${current.emp.name}\n` +
+          `💰 ${amountStr} — Salário · PIX\n` +
+          `📅 ${paymentDate}`,
+        parse_mode: 'Markdown',
+      },
+      { filename: `recibo-${savedReceipt.receipt_number}.pdf`, contentType: 'application/pdf' }
+    );
+    cleanupFile(receiptPath);
+
+    // Marca como processado
+    const items = d.fechamentoItems || [];
+    const idx = items.findIndex(i => i.emp.id === current.emp.id);
+    if (idx >= 0) items[idx].processed = true;
+    setData(userId, 'fechamentoItems', items);
+
+    const generated = d.fechamentoGenerated || [];
+    generated.push(`${current.emp.name} — ${amountStr}`);
+    setData(userId, 'fechamentoGenerated', generated);
+
+    // Verifica se há mais colaboradores a processar
+    const remaining = items.filter(i => !i.processed && i.balance > 0);
+    if (remaining.length > 0) {
+      setState(userId, STATES.AWAITING_FECHAMENTO_CONFIRM);
+      await sendFechamentoPixSummary(bot, chatId, userId);
+    } else {
+      resetConversation(userId);
+      let summary = `✅ *Fechamento PIX concluído!*\n\n📄 *Recibos gerados (${generated.length}):*\n`;
+      generated.forEach(line => { summary += `• ${line}\n`; });
+      await bot.sendMessage(chatId, summary, { parse_mode: 'Markdown' });
+    }
+  } catch (err) {
+    console.error(`Erro no fechamento PIX de ${current.emp.name}:`, err);
+    setState(userId, STATES.AWAITING_FECHAMENTO_CONFIRM);
+    await bot.sendMessage(
+      chatId,
+      `❌ Erro ao processar comprovante de *${escapeMd(current.emp.name)}*: ${err.message}\n\nTente novamente ou selecione outro colaborador.`,
+      { parse_mode: 'Markdown' }
+    );
+    await sendFechamentoPixSummary(bot, chatId, userId);
+  }
+}
+
 function startBot() {
   const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
   console.log('🤖 Bot Telegram iniciado (polling)');
@@ -927,6 +1116,15 @@ function startBot() {
     if (!isAllowed(userId)) return;
 
     const state = getState(userId);
+
+    if (state === STATES.AWAITING_FECHAMENTO_PIX_VOUCHER) {
+      setState(userId, STATES.PROCESSING);
+      const photo = msg.photo[msg.photo.length - 1];
+      const filePath = await downloadFile(bot, photo.file_id, '.jpg');
+      await processarVoucherFechamentoPix(bot, chatId, userId, filePath);
+      return;
+    }
+
     if (state !== STATES.IDLE) {
       return bot.sendMessage(chatId, '⚠️ Ainda estou processando outro comprovante.\nUse /cancelar para recomeçar.');
     }
@@ -946,7 +1144,9 @@ function startBot() {
     if (!isAllowed(userId)) return;
 
     const state = getState(userId);
-    if (state !== STATES.IDLE) {
+    const isPixFechamento = state === STATES.AWAITING_FECHAMENTO_PIX_VOUCHER;
+
+    if (!isPixFechamento && state !== STATES.IDLE) {
       return bot.sendMessage(chatId, '⚠️ Ainda estou processando outro comprovante.\nUse /cancelar para recomeçar.');
     }
 
@@ -963,6 +1163,11 @@ function startBot() {
 
     setState(userId, STATES.PROCESSING);
     const filePath = await downloadFile(bot, doc.file_id, ext);
+
+    if (isPixFechamento) {
+      await processarVoucherFechamentoPix(bot, chatId, userId, filePath);
+      return;
+    }
     await processVoucher(bot, chatId, userId, filePath);
   });
 
@@ -1034,13 +1239,24 @@ function startBot() {
 
         setData(userId, 'fechamentoMonth', month);
         setData(userId, 'fechamentoYear', year);
-        setState(userId, STATES.AWAITING_FECHAMENTO_DATE);
+        setState(userId, STATES.AWAITING_FECHAMENTO_METHOD);
 
-        const hoje = todayBR();
+        const monthNames2 = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+          'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        const monthLabel2 = monthNames2[monthNum];
+
         bot.sendMessage(
           chatId,
-          `✅ Período: *${month}/${year}*\n\n📅 Qual é a *data de pagamento* dos salários?\n_(DD/MM/AAAA ou *hoje* para usar ${escapeMd(hoje)})_`,
-          { parse_mode: 'Markdown' }
+          `✅ Período: *${month}/${year}* — ${monthLabel2}\n\n💳 Como será o pagamento dos salários?`,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '💵 Dinheiro', callback_data: 'fechamento_method_dinheiro' },
+                { text: '📲 PIX',      callback_data: 'fechamento_method_pix' },
+              ]],
+            },
+          }
         );
         break;
       }
@@ -1959,13 +2175,57 @@ function startBot() {
     }
 
     // ─── Callbacks do /fechamento ────────────────────────────────────────────
+    if (query.data.startsWith('fechamento_method_')) {
+      if (getState(userId) !== STATES.AWAITING_FECHAMENTO_METHOD) return;
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      const method = query.data.replace('fechamento_method_', '');
+      setData(userId, 'fechamentoMethod', method);
+
+      if (method === 'dinheiro') {
+        setState(userId, STATES.AWAITING_FECHAMENTO_DATE);
+        const hoje = todayBR();
+        return bot.sendMessage(
+          chatId,
+          `✅ Pagamento em *Dinheiro*\n\n📅 Qual é a *data de pagamento* dos salários?\n_(DD/MM/AAAA ou *hoje* para usar ${escapeMd(hoje)})_`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      // PIX: calcula itens e exibe resumo individual
+      const dPix = getData(userId);
+      const { fechamentoMonth: mPix, fechamentoYear: yPix } = dPix;
+      const empsPix = listEmployees();
+      const itemsPix = empsPix.map(emp => {
+        const advances = getSumByEmployeeAndPeriod(emp.name, mPix, yPix);
+        const salary = emp.salary || 0;
+        return { emp, salary, advances, balance: salary - advances, processed: false };
+      });
+      setData(userId, 'fechamentoItems', itemsPix);
+      setData(userId, 'fechamentoGenerated', []);
+      setState(userId, STATES.AWAITING_FECHAMENTO_CONFIRM);
+      await sendFechamentoPixSummary(bot, chatId, userId);
+      return;
+    }
+
     if (query.data === 'fechamento_cancelar') {
       if (getState(userId) !== STATES.AWAITING_FECHAMENTO_CONFIRM) return;
       await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
         chat_id: chatId,
         message_id: query.message.message_id,
       });
+      const dCancel = getData(userId);
+      const generated = dCancel.fechamentoGenerated || [];
       resetConversation(userId);
+      if (generated.length > 0) {
+        let msg = `🔚 *Fechamento encerrado.*\n\n📄 *Processados (${generated.length}):*\n`;
+        generated.forEach(line => { msg += `• ${line}\n`; });
+        return bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+      }
       return bot.sendMessage(chatId, '❌ Fechamento cancelado.');
     }
 
@@ -1979,7 +2239,23 @@ function startBot() {
 
       const d = getData(userId);
       const items = d.fechamentoItems || [];
+      const method = d.fechamentoMethod || 'dinheiro';
 
+      // ── Fluxo PIX: seleciona um colaborador e aguarda comprovante ──
+      if (method === 'pix') {
+        const empId = parseInt(query.data.replace('fechamento_emp_', ''), 10);
+        const item = items.find(i => i.emp.id === empId && !i.processed && i.balance > 0);
+        if (!item) return bot.sendMessage(chatId, '⚠️ Colaborador não encontrado ou já processado.');
+        setData(userId, 'fechamentoPixCurrent', item);
+        setState(userId, STATES.AWAITING_FECHAMENTO_PIX_VOUCHER);
+        return bot.sendMessage(
+          chatId,
+          `📲 Envie o *comprovante PIX* de *${escapeMd(item.emp.name)}*\n💰 Valor: *${formatBRL(item.balance)}*`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      // ── Fluxo Dinheiro: geração em lote ──
       let toProcess = [];
       if (query.data === 'fechamento_todos') {
         toProcess = items.filter(i => i.balance > 0);
