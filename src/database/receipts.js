@@ -112,6 +112,23 @@ function getSumByEmployeeAndPeriod(employeeName, month, year) {
     }, 0);
 }
 
+function getSalaryReceiptForPeriod(employeeName, month, year) {
+  const period = `${month}/${year}`;
+  const createdPrefix = `${year}-${month}`;
+  return db.get(
+    `SELECT * FROM receipts
+     WHERE LOWER(employee_name) = LOWER(?)
+       AND vale_type = 'Salário'
+       AND status = 'active'
+       AND (
+         substr(payment_date, 4, 7) = ?
+         OR (payment_date IS NULL AND substr(created_at, 1, 7) = ?)
+       )
+     ORDER BY id DESC LIMIT 1`,
+    [employeeName, period, createdPrefix]
+  ) || null;
+}
+
 function cancelReceiptByNumber(receiptNumber) {
   db.run(`UPDATE receipts SET status = 'cancelled' WHERE receipt_number = ?`, [receiptNumber]);
   return getReceiptByNumber(receiptNumber);
@@ -139,6 +156,7 @@ module.exports = {
   searchReceiptsByEmployee,
   getReceiptsByEmployeeAndPeriod,
   getSumByEmployeeAndPeriod,
+  getSalaryReceiptForPeriod,
   cancelReceiptByNumber,
   updateReceipt,
 };

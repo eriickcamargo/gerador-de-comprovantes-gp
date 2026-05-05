@@ -7,7 +7,7 @@ const { extractFromVoucher } = require('../ai/extractor');
 const { generatePDF, generateStatementPDF, cleanupFile } = require('../pdf/generator');
 const { findEmployee, saveEmployee, listEmployees, deleteEmployee, getEmployeeById } = require('../database/employees');
 const { getCompany, saveCompany } = require('../database/company');
-const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, getSumByEmployeeAndPeriod, cancelReceiptByNumber, updateReceipt } = require('../database/receipts');
+const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, getSumByEmployeeAndPeriod, getSalaryReceiptForPeriod, cancelReceiptByNumber, updateReceipt } = require('../database/receipts');
 const { STATES, getState, setState, getData, setData, resetConversation } = require('./conversations');
 
 const TEMP_DIR = path.join(__dirname, '../../temp');
@@ -42,6 +42,26 @@ function parseAmount(str) {
 function formatBRL(value) {
   const num = Number(value) || 0;
   return 'R$ ' + num.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+// Extrai { month, year } de uma string "DD/MM/AAAA"; retorna null se inválida.
+function monthYearFromDate(dateStr) {
+  if (!dateStr) return null;
+  const parts = String(dateStr).split('/');
+  if (parts.length !== 3) return null;
+  return { month: parts[1], year: parts[2] };
+}
+
+function salaryConflictMessage(empName, existing) {
+  const rn = existing.receipt_number;
+  return (
+    `⚠️ *Atenção!*\n\n` +
+    `*${escapeMd(empName)}* já possui recibo de Salário neste período.\n\n` +
+    `📄 Recibo: *${rn}* — ${existing.amount}\n` +
+    `📅 ${existing.payment_date || '—'}\n` +
+    `Para editar, use o comando:\n\`/editar_recibo ${rn}\`\n\n` +
+    `Deseja emitir outro recibo mesmo assim?`
+  );
 }
 
 // IDs de usuários autorizados (carregados do .env)
@@ -253,6 +273,24 @@ async function finishAndSendReceipt(bot, chatId, userId) {
   const employee = data.employee || {};
   const company = data.company || {};
 
+  if (!data.skipConflictCheck) {
+    const empName = employee.name || extracted.nome_beneficiario;
+    const my = monthYearFromDate(extracted.data);
+    if (empName && my) {
+      const existing = getSalaryReceiptForPeriod(empName, my.month, my.year);
+      if (existing) {
+        setState(userId, STATES.AWAITING_FECHAMENTO_SALARY_CONFLICT_PIX);
+        return bot.sendMessage(chatId, salaryConflictMessage(empName, existing), {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [[
+            { text: '✅ Continuar mesmo assim', callback_data: 'salary_conflict_continue_pix' },
+            { text: '❌ Cancelar',              callback_data: 'salary_conflict_cancel' },
+          ]]},
+        });
+      }
+    }
+  }
+
   setState(userId, STATES.PROCESSING);
 
   try {
@@ -355,6 +393,23 @@ async function finishAndSendCashReceipt(bot, chatId, userId) {
   const data = getData(userId);
   const employee = data.dinheiroEmployee || {};
   const company = getCompany() || {};
+
+  if (!data.skipConflictCheck && data.dinheiroName && data.dinheiroData) {
+    const my = monthYearFromDate(data.dinheiroData);
+    if (my) {
+      const existing = getSalaryReceiptForPeriod(data.dinheiroName, my.month, my.year);
+      if (existing) {
+        setState(userId, STATES.AWAITING_FECHAMENTO_SALARY_CONFLICT_DINHEIRO);
+        return bot.sendMessage(chatId, salaryConflictMessage(data.dinheiroName, existing), {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [[
+            { text: '✅ Continuar mesmo assim', callback_data: 'salary_conflict_continue_dinheiro' },
+            { text: '❌ Cancelar',              callback_data: 'salary_conflict_cancel' },
+          ]]},
+        });
+      }
+    }
+  }
 
   setState(userId, STATES.PROCESSING);
 
@@ -540,14 +595,18 @@ async function sendFechamentoPixSummary(bot, chatId, userId) {
 
   let text = `💼 *Fechamento PIX — ${monthLabel}/${d.fechamentoYear}*\n\n`;
 
-  const noSalary = items.filter(i => !i.processed && i.salary === 0);
+  const noSalary = items.filter(i => !i.processed && !i.alreadyClosed && i.salary === 0);
   if (noSalary.length > 0) {
     text += `⚠️ _Sem salário cadastrado: ${noSalary.map(i => i.emp.name).join(', ')}_\n\n`;
   }
 
-  items.forEach(({ emp, salary, advances, balance, processed }) => {
+  items.forEach(({ emp, salary, advances, balance, processed, alreadyClosed, salaryReceipt: sr }) => {
     if (processed) {
       text += `✅ *${escapeMd(emp.name)}* — processado\n\n`;
+    } else if (alreadyClosed) {
+      text += `🔒 *${escapeMd(emp.name)}* — fechamento já realizado\n`;
+      text += `   Recibo: *${sr.receipt_number}* — ${sr.amount} — ${sr.payment_date || '—'}\n`;
+      text += `   Para editar: \`/editar_recibo ${sr.receipt_number}\`\n\n`;
     } else {
       const balanceLabel = balance < 0 ? `⚠️ ${formatBRL(balance)}` : formatBRL(balance);
       text += `👤 *${escapeMd(emp.name)}*\n`;
@@ -555,7 +614,7 @@ async function sendFechamentoPixSummary(bot, chatId, userId) {
     }
   });
 
-  const remaining = items.filter(i => !i.processed && i.balance > 0);
+  const remaining = items.filter(i => !i.processed && !i.alreadyClosed && i.balance > 0);
 
   if (remaining.length === 0) {
     text += '_Todos os colaboradores foram processados._';
@@ -1291,7 +1350,8 @@ function startBot() {
           const advances = getSumByEmployeeAndPeriod(emp.name, month, year);
           const salary = emp.salary || 0;
           const balance = salary - advances;
-          return { emp, salary, advances, balance };
+          const salaryReceipt = getSalaryReceiptForPeriod(emp.name, month, year);
+          return { emp, salary, advances, balance, alreadyClosed: !!salaryReceipt, salaryReceipt: salaryReceipt || null };
         });
 
         setData(userId, 'fechamentoDate', paymentDate);
@@ -1300,17 +1360,23 @@ function startBot() {
 
         let text = `💼 *Fechamento — ${monthLabel}/${year}*\n`;
         text += `📅 Data de pagamento: *${escapeMd(paymentDate)}*\n\n`;
-        const noSalary = items.filter(i => i.salary === 0);
+        const noSalary = items.filter(i => i.salary === 0 && !i.alreadyClosed);
         if (noSalary.length > 0) {
           text += `⚠️ _Sem salário cadastrado: ${noSalary.map(i => i.emp.name).join(', ')}_\n\n`;
         }
-        items.forEach(({ emp, salary, advances, balance }) => {
-          const balanceLabel = balance < 0 ? `⚠️ ${formatBRL(balance)}` : formatBRL(balance);
-          text += `👤 *${escapeMd(emp.name)}*\n`;
-          text += `   Salário: ${formatBRL(salary)} | Adiant.: ${formatBRL(advances)} | Saldo: *${balanceLabel}*\n\n`;
+        items.forEach(({ emp, salary, advances, balance, alreadyClosed, salaryReceipt: sr }) => {
+          if (alreadyClosed) {
+            text += `🔒 *${escapeMd(emp.name)}* — fechamento já realizado\n`;
+            text += `   Recibo: *${sr.receipt_number}* — ${sr.amount} — ${sr.payment_date || '—'}\n`;
+            text += `   Para editar: \`/editar_recibo ${sr.receipt_number}\`\n\n`;
+          } else {
+            const balanceLabel = balance < 0 ? `⚠️ ${formatBRL(balance)}` : formatBRL(balance);
+            text += `👤 *${escapeMd(emp.name)}*\n`;
+            text += `   Salário: ${formatBRL(salary)} | Adiant.: ${formatBRL(advances)} | Saldo: *${balanceLabel}*\n\n`;
+          }
         });
 
-        const eligible = items.filter(i => i.balance > 0);
+        const eligible = items.filter(i => i.balance > 0 && !i.alreadyClosed);
 
         const keyboard = [];
         if (eligible.length > 1) {
@@ -2174,6 +2240,38 @@ function startBot() {
       await finishAndSendReceipt(bot, chatId, userId);
     }
 
+    // ─── Callbacks de conflito de salário ────────────────────────────────────
+    if (query.data === 'salary_conflict_cancel') {
+      const st = getState(userId);
+      if (st !== STATES.AWAITING_FECHAMENTO_SALARY_CONFLICT_DINHEIRO &&
+          st !== STATES.AWAITING_FECHAMENTO_SALARY_CONFLICT_PIX) return;
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId, message_id: query.message.message_id,
+      });
+      resetConversation(userId);
+      return bot.sendMessage(chatId, '❌ Emissão cancelada.');
+    }
+
+    if (query.data === 'salary_conflict_continue_dinheiro') {
+      if (getState(userId) !== STATES.AWAITING_FECHAMENTO_SALARY_CONFLICT_DINHEIRO) return;
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId, message_id: query.message.message_id,
+      });
+      setData(userId, 'skipConflictCheck', true);
+      await finishAndSendCashReceipt(bot, chatId, userId);
+      return;
+    }
+
+    if (query.data === 'salary_conflict_continue_pix') {
+      if (getState(userId) !== STATES.AWAITING_FECHAMENTO_SALARY_CONFLICT_PIX) return;
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId, message_id: query.message.message_id,
+      });
+      setData(userId, 'skipConflictCheck', true);
+      await finishAndSendReceipt(bot, chatId, userId);
+      return;
+    }
+
     // ─── Callbacks do /fechamento ────────────────────────────────────────────
     if (query.data.startsWith('fechamento_method_')) {
       if (getState(userId) !== STATES.AWAITING_FECHAMENTO_METHOD) return;
@@ -2203,7 +2301,9 @@ function startBot() {
       const itemsPix = empsPix.map(emp => {
         const advances = getSumByEmployeeAndPeriod(emp.name, mPix, yPix);
         const salary = emp.salary || 0;
-        return { emp, salary, advances, balance: salary - advances, processed: false };
+        const balance = salary - advances;
+        const salaryReceipt = getSalaryReceiptForPeriod(emp.name, mPix, yPix);
+        return { emp, salary, advances, balance, processed: false, alreadyClosed: !!salaryReceipt, salaryReceipt: salaryReceipt || null };
       });
       setData(userId, 'fechamentoItems', itemsPix);
       setData(userId, 'fechamentoGenerated', []);
