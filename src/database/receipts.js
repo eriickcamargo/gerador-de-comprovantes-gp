@@ -113,19 +113,15 @@ function getSumByEmployeeAndPeriod(employeeName, month, year) {
 }
 
 function getSalaryReceiptForPeriod(employeeName, month, year) {
-  const period = `${month}/${year}`;
-  const createdPrefix = `${year}-${month}`;
+  const periodoKey = `${month}/${year}`;
   return db.get(
     `SELECT * FROM receipts
      WHERE LOWER(employee_name) = LOWER(?)
        AND vale_type = 'Salário'
        AND status = 'active'
-       AND (
-         substr(payment_date, 4, 7) = ?
-         OR (payment_date IS NULL AND substr(created_at, 1, 7) = ?)
-       )
+       AND extra_data LIKE ?
      ORDER BY id DESC LIMIT 1`,
-    [employeeName, period, createdPrefix]
+    [employeeName, `%"periodoFechamento":"${periodoKey}"%`]
   ) || null;
 }
 

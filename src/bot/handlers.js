@@ -673,6 +673,7 @@ async function processarVoucherFechamentoPix(bot, chatId, userId, filePath) {
       company_name:     company.name  || 'EMPRESA',
       company_cnpj:     company.cnpj  || '',
       telegram_user_id: String(userId),
+      extraData: { periodoFechamento: `${d.fechamentoMonth}/${d.fechamentoYear}` },
     });
 
     const receiptData = {
@@ -2396,6 +2397,7 @@ function startBot() {
             company_name: company.name || 'EMPRESA',
             company_cnpj: company.cnpj || '',
             telegram_user_id: String(userId),
+            extraData: { periodoFechamento: `${d.fechamentoMonth}/${d.fechamentoYear}` },
           });
 
           const receiptData = {
