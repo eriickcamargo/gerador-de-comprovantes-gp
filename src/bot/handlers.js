@@ -1032,10 +1032,44 @@ function startBot() {
           return bot.sendMessage(chatId, '⚠️ Mês inválido. Use um número entre 01 e 12.');
         }
 
+        setData(userId, 'fechamentoMonth', month);
+        setData(userId, 'fechamentoYear', year);
+        setState(userId, STATES.AWAITING_FECHAMENTO_DATE);
+
+        const hoje = todayBR();
+        bot.sendMessage(
+          chatId,
+          `✅ Período: *${month}/${year}*\n\n📅 Qual é a *data de pagamento* dos salários?\n_(DD/MM/AAAA ou *hoje* para usar ${escapeMd(hoje)})_`,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
+
+      case STATES.AWAITING_FECHAMENTO_DATE: {
+        const input = msg.text.trim();
+        let paymentDate;
+        if (input.toLowerCase() === 'hoje') {
+          paymentDate = todayBR();
+        } else {
+          const dateMatch = input.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+          if (!dateMatch) {
+            return bot.sendMessage(chatId, '⚠️ Formato inválido. Use DD/MM/AAAA (ex: 05/06/2026) ou *hoje*.');
+          }
+          const [, dd, mm, yyyy] = dateMatch;
+          const d2 = parseInt(dd, 10), m2 = parseInt(mm, 10), y2 = parseInt(yyyy, 10);
+          if (m2 < 1 || m2 > 12 || d2 < 1 || d2 > 31) {
+            return bot.sendMessage(chatId, '⚠️ Data inválida. Verifique o dia e o mês.');
+          }
+          paymentDate = `${dd}/${mm}/${yyyy}`;
+        }
+
+        const d = getData(userId);
+        const { fechamentoMonth: month, fechamentoYear: year } = d;
+
         const employees = listEmployees();
         const monthNames = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
           'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-        const monthLabel = monthNames[monthNum];
+        const monthLabel = monthNames[parseInt(month, 10)];
 
         const items = employees.map(emp => {
           const advances = getSumByEmployeeAndPeriod(emp.name, month, year);
@@ -1044,12 +1078,12 @@ function startBot() {
           return { emp, salary, advances, balance };
         });
 
-        setData(userId, 'fechamentoMonth', month);
-        setData(userId, 'fechamentoYear', year);
+        setData(userId, 'fechamentoDate', paymentDate);
         setData(userId, 'fechamentoItems', items);
         setState(userId, STATES.AWAITING_FECHAMENTO_CONFIRM);
 
-        let text = `💼 *Fechamento — ${monthLabel}/${year}*\n\n`;
+        let text = `💼 *Fechamento — ${monthLabel}/${year}*\n`;
+        text += `📅 Data de pagamento: *${escapeMd(paymentDate)}*\n\n`;
         const noSalary = items.filter(i => i.salary === 0);
         if (noSalary.length > 0) {
           text += `⚠️ _Sem salário cadastrado: ${noSalary.map(i => i.emp.name).join(', ')}_\n\n`;
@@ -1961,10 +1995,10 @@ function startBot() {
       }
 
       setState(userId, STATES.PROCESSING);
-      await bot.sendMessage(chatId, `⏳ Gerando recibos e extratos para ${toProcess.length} colaborador(es)...`);
+      const paymentDate = d.fechamentoDate;
+      await bot.sendMessage(chatId, `⏳ Gerando recibos e extratos para ${toProcess.length} colaborador(es)...\n📅 Data dos recibos: ${paymentDate}`);
 
       const company = getCompany() || {};
-      const today = todayBR();
       const monthNames = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho',
         'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
       const monthLabel = monthNames[parseInt(d.fechamentoMonth, 10)];
@@ -1981,7 +2015,7 @@ function startBot() {
             setor: emp.setor || '',
             amount: amountStr,
             vale_type: 'Salário',
-            payment_date: today,
+            payment_date: paymentDate,
             payment_method: 'dinheiro',
             company_name: company.name || 'EMPRESA',
             company_cnpj: company.cnpj || '',
@@ -1999,7 +2033,7 @@ function startBot() {
             setor:          emp.setor  || '',
             amount:         amountStr,
             valeType:       'Salário',
-            paymentDate:    today,
+            paymentDate:    paymentDate,
             paymentMethod:  'dinheiro',
           };
 
@@ -2040,7 +2074,7 @@ function startBot() {
                 `✅ *Recibo Nº ${savedReceipt.receipt_number}*\n` +
                 `👤 ${emp.name}\n` +
                 `💰 ${amountStr} — Salário\n` +
-                `📅 ${today}`,
+                `📅 ${paymentDate}`,
               parse_mode: 'Markdown',
             },
             { filename: `recibo-${savedReceipt.receipt_number}.pdf`, contentType: 'application/pdf' }

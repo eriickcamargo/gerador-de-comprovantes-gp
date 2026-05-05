@@ -47,16 +47,20 @@ function buildStatementHTML(data, receipts) {
   });
 
   const activeReceipts = receipts.filter(r => r.status !== 'cancelled');
+  const advanceReceipts = activeReceipts.filter(r => r.vale_type !== 'Salário');
+  const salaryReceipts  = activeReceipts.filter(r => r.vale_type === 'Salário');
+  const hasBoth = advanceReceipts.length > 0 && salaryReceipts.length > 0;
 
   // Linhas da tabela
   const rows = receipts.map((r) => {
     const cancelled = r.status === 'cancelled';
+    const isSalary = r.vale_type === 'Salário' && !cancelled;
     const amountHtml = cancelled ? `<s style="color:#b8b0a4">${r.amount}</s>` : r.amount;
     const typeLabel = (r.vale_type || '—') + (cancelled
       ? ' <span class="cancel-tag">cancelado</span>'
-      : '');
+      : isSalary ? ' <span class="salary-tag">salário</span>' : '');
     return `
-    <tr${cancelled ? ' class="cancelled"' : ''}>
+    <tr${cancelled ? ' class="cancelled"' : isSalary ? ' class="salary-row"' : ''}>
       <td><span class="mono">${r.receipt_number || '—'}</span></td>
       <td>${r.payment_date || '—'}</td>
       <td>${typeLabel}</td>
@@ -64,21 +68,47 @@ function buildStatementHTML(data, receipts) {
     </tr>`;
   }).join('');
 
-  // Subtotais por tipo
+  // Subtotais por tipo — apenas adiantamentos
   const byType = {};
-  activeReceipts.forEach(r => {
+  advanceReceipts.forEach(r => {
     const type = r.vale_type || 'Outros';
     byType[type] = (byType[type] || 0) + parseAmount(r.amount);
   });
 
-  const summaryRows = Object.entries(byType).map(([type, total]) => `
+  const advancesTotal = advanceReceipts.reduce((s, r) => s + parseAmount(r.amount), 0);
+  const salaryTotal   = salaryReceipts.reduce((s, r) => s + parseAmount(r.amount), 0);
+  const grandTotal    = advancesTotal + salaryTotal;
+
+  const advanceSummaryRows = Object.entries(byType).map(([type, total]) => `
     <div class="summary-row">
       <span class="summary-label">${type}</span>
       <span class="summary-dots"></span>
       <span class="summary-value">${formatAmount(total)}</span>
     </div>`).join('');
 
-  const grandTotal = activeReceipts.reduce((s, r) => s + parseAmount(r.amount), 0);
+  const salarySummaryRows = salaryReceipts.map(r => `
+    <div class="summary-row">
+      <span class="summary-label">Salário pago em ${r.payment_date || '—'}</span>
+      <span class="summary-dots"></span>
+      <span class="summary-value">${r.amount}</span>
+    </div>`).join('');
+
+  const summaryLeftHTML = `
+    ${advanceReceipts.length > 0 ? `
+      <div class="section-label" style="margin-top:0">Adiantamentos</div>
+      ${advanceSummaryRows}
+      ${hasBoth ? `
+        <div class="summary-row subtotal-row">
+          <span class="summary-label">Total adiantado</span>
+          <span class="summary-dots"></span>
+          <span class="summary-value">${formatAmount(advancesTotal)}</span>
+        </div>` : ''}
+    ` : ''}
+    ${salaryReceipts.length > 0 ? `
+      <div class="section-label" style="margin-top:${advanceReceipts.length > 0 ? '4mm' : '0'}">Pagamento de Salário</div>
+      ${salarySummaryRows}
+    ` : ''}
+  `;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -236,6 +266,26 @@ function buildStatementHTML(data, receipts) {
       border: 0.5px solid #b01e26;
       border-radius: 1mm;
     }
+    .salary-tag {
+      display: inline-block;
+      margin-left: 2mm;
+      font-size: 6.5pt;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #1a6b2a;
+      font-weight: 700;
+      padding: 0.5mm 1.5mm;
+      border: 0.5px solid #1a6b2a;
+      border-radius: 1mm;
+    }
+    tr.salary-row td { font-weight: 600; }
+    .subtotal-row {
+      border-top: 0.5px solid #c8c0b2;
+      margin-top: 1mm;
+      padding-top: 1.5mm;
+    }
+    .subtotal-row .summary-label { font-weight: 600; }
+    .subtotal-row .summary-value { font-weight: 700; }
 
     .summary-grid {
       display: grid;
@@ -350,7 +400,7 @@ function buildStatementHTML(data, receipts) {
       </div>
     </div>
     <div style="text-align:right">
-      <div class="kicker">Total no Período</div>
+      <div class="kicker">${hasBoth ? 'Total Recebido no Período' : 'Total no Período'}</div>
       <div class="grand-total">${formatAmount(grandTotal)}</div>
       <div class="employee-meta">${activeReceipts.length} recibo(s) ativo(s)</div>
     </div>
@@ -375,15 +425,26 @@ function buildStatementHTML(data, receipts) {
   ${activeReceipts.length > 0 ? `
     <div class="summary-grid">
       <div>
-        <div class="section-label" style="margin-top:0">Resumo por Categoria</div>
-        ${summaryRows}
+        ${summaryLeftHTML}
       </div>
       <div>
         <div class="section-label" style="margin-top:0">&nbsp;</div>
         <div class="total-box">
-          <span class="label">Total geral no período</span>
-          <span class="value">${formatAmount(grandTotal)}</span>
-          <span class="meta">${period}</span>
+          ${hasBoth ? `
+            <span class="label">Adiantamentos</span>
+            <span class="value" style="font-size:14pt">${formatAmount(advancesTotal)}</span>
+            <div style="border-top:0.5px solid rgba(255,255,255,0.25);margin:3mm 0"></div>
+            <span class="label">Salário pago</span>
+            <span class="value" style="font-size:14pt">${formatAmount(salaryTotal)}</span>
+            <div style="border-top:0.5px solid rgba(255,255,255,0.25);margin:3mm 0"></div>
+            <span class="label">Total recebido</span>
+            <span class="value">${formatAmount(grandTotal)}</span>
+            <span class="meta">${period}</span>
+          ` : `
+            <span class="label">Total no período</span>
+            <span class="value">${formatAmount(grandTotal)}</span>
+            <span class="meta">${period}</span>
+          `}
         </div>
       </div>
     </div>

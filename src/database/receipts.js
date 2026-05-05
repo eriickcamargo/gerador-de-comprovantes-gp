@@ -103,7 +103,7 @@ function getReceiptsByEmployeeAndPeriod(employeeName, month, year) {
 function getSumByEmployeeAndPeriod(employeeName, month, year) {
   const receipts = getReceiptsByEmployeeAndPeriod(employeeName, month, year);
   return receipts
-    .filter(r => r.status !== 'cancelled')
+    .filter(r => r.status !== 'cancelled' && r.vale_type !== 'Salário')
     .reduce((sum, r) => {
       const val = parseFloat(
         String(r.amount || '0').replace('R$', '').replace(/\./g, '').replace(',', '.').trim()
