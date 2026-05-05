@@ -53,6 +53,8 @@ docker compose up -d --build
 | `/buscar Nome` | Busca recibos pelo nome do funcionário |
 | `/recibo NUMERO` | Baixa novamente o PDF de um recibo pelo número |
 | `/extrato` | Gera extrato mensal em PDF de um funcionário |
+| `/fechamento` | Calcula saldo e emite recibos de salário do mês |
+| `/editar_recibo NUMERO` | Edita e re-emite um recibo (ex: `/editar_recibo 202604-001`) |
 | `/cancelar_recibo NUMERO` | Marca um recibo como cancelado |
 | `/cancelar` | Cancela a operação em andamento |
 
@@ -90,7 +92,6 @@ O bot usa SQLite via `sql.js`. O arquivo `db/data.sqlite` é persistido em disco
 │       ├── generator.js        # Geração de PDF com Puppeteer
 │       ├── template.js         # Template HTML do recibo de vale
 │       └── statement_template.js # Template HTML do extrato mensal
-├── chefstock-bot/              # Bot separado de alertas de estoque (Firebase + Telegram)
 ├── db/                         # Banco de dados SQLite (gerado em runtime)
 ├── temp/                       # Arquivos temporários de imagem e PDF (limpos após uso)
 ├── Dockerfile
