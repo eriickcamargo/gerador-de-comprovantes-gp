@@ -147,6 +147,50 @@ function valeKeyboardEdit() {
   };
 }
 
+function sendColabEditMenu(bot, chatId, userId) {
+  const d = getData(userId);
+  const employee = getEmployeeById(d.editColabId);
+  const pending = d.pendingColabChanges || {};
+
+  const nome    = pending.name   !== undefined ? pending.name   : (employee.name   || '—');
+  const cpf     = pending.cpf    !== undefined ? pending.cpf    : (employee.cpf    || 'Não informado');
+  const cargo   = pending.cargo  !== undefined ? pending.cargo  : (employee.cargo  || '—');
+  const setor   = pending.setor  !== undefined ? pending.setor  : (employee.setor  || '—');
+  const salary  = pending.salary !== undefined ? pending.salary : (employee.salary || 0);
+
+  const hasPending = Object.keys(pending).length > 0;
+  const pendingNote = hasPending ? '\n_⚠️ Há alterações não salvas_' : '';
+
+  return bot.sendMessage(
+    chatId,
+    `✏️ *Editar Colaborador*\n\n` +
+    `👤 Nome: *${escapeMd(nome)}*\n` +
+    `🪪 CPF: ${escapeMd(cpf)}\n` +
+    `💼 Cargo: ${escapeMd(cargo)}\n` +
+    `🏢 Setor: ${escapeMd(setor)}\n` +
+    `💰 Salário: ${formatBRL(salary)}` +
+    `${pendingNote}\n\n` +
+    `Qual campo deseja alterar?`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '👤 Nome',    callback_data: 'colab_edit_field_nome' },
+            { text: '🪪 CPF',     callback_data: 'colab_edit_field_cpf' },
+          ],
+          [
+            { text: '💼 Cargo',   callback_data: 'colab_edit_field_cargo' },
+            { text: '🏢 Setor',   callback_data: 'colab_edit_field_setor' },
+          ],
+          [{ text: '💰 Salário',  callback_data: 'colab_edit_field_salary' }],
+          [{ text: '✅ Concluir', callback_data: 'colab_edit_field_done' }],
+        ],
+      },
+    }
+  );
+}
+
 /**
  * Baixa o arquivo enviado pelo usuário e salva no temp/
  */
@@ -1403,80 +1447,38 @@ function startBot() {
         break;
       }
 
-      // ─── Fluxo de Gerenciamento de Colaboradores ───
+      // ─── Fluxo de Gerenciamento de Colaboradores (cadastro) ───
       case STATES.AWAITING_COLAB_NOME: {
-        const input = msg.text.trim();
-        const editId = getData(userId).editColabId;
-        const employee = editId ? getEmployeeById(editId) : null;
-        
-        let nomeFinal = input;
-        if (editId && input.toLowerCase() === 'manter') {
-          nomeFinal = employee.name;
-        }
-
+        const nomeFinal = msg.text.trim();
         setData(userId, 'colabName', nomeFinal);
         setState(userId, STATES.AWAITING_COLAB_CPF);
-        
-        const cpfText = editId ? `(atual: ${employee.cpf || 'vazio'}, ou "manter")` : `(ou "pular")`;
-        bot.sendMessage(chatId, `✅ Nome: *${escapeMd(nomeFinal)}*\n\nDigite o *CPF* ${cpfText}:`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `✅ Nome: *${escapeMd(nomeFinal)}*\n\nDigite o *CPF* (ou "pular"):`, { parse_mode: 'Markdown' });
         break;
       }
 
       case STATES.AWAITING_COLAB_CPF: {
-        const input = msg.text.trim();
-        const editId = getData(userId).editColabId;
-        const employee = editId ? getEmployeeById(editId) : null;
-        
-        let cpfFinal = input === 'pular' ? '' : input;
-        if (editId && input.toLowerCase() === 'manter') {
-          cpfFinal = employee.cpf || '';
-        }
-
+        const cpfFinal = msg.text.trim() === 'pular' ? '' : msg.text.trim();
         setData(userId, 'colabCpf', cpfFinal);
         setState(userId, STATES.AWAITING_COLAB_CARGO);
-        
-        const cargoText = editId ? `(atual: ${employee.cargo || 'vazio'}, ou "manter")` : ``;
-        bot.sendMessage(chatId, `✅ CPF: *${cpfFinal || 'Não informado'}*\n\nDigite o *Cargo* ${cargoText}:`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `✅ CPF: *${cpfFinal || 'Não informado'}*\n\nDigite o *Cargo*:`, { parse_mode: 'Markdown' });
         break;
       }
 
       case STATES.AWAITING_COLAB_CARGO: {
-        const input = msg.text.trim();
-        const editId = getData(userId).editColabId;
-        const employee = editId ? getEmployeeById(editId) : null;
-        
-        let cargoFinal = input;
-        if (editId && input.toLowerCase() === 'manter') {
-          cargoFinal = employee.cargo || '';
-        }
-
+        const cargoFinal = msg.text.trim();
         setData(userId, 'colabCargo', cargoFinal);
         setState(userId, STATES.AWAITING_COLAB_SETOR);
-        
-        const setorText = editId ? `(atual: ${employee.setor || 'vazio'}, ou "manter")` : ``;
-        bot.sendMessage(chatId, `✅ Cargo: *${escapeMd(cargoFinal)}*\n\nDigite o *Setor* ${setorText}:`, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, `✅ Cargo: *${escapeMd(cargoFinal)}*\n\nDigite o *Setor*:`, { parse_mode: 'Markdown' });
         break;
       }
 
       case STATES.AWAITING_COLAB_SETOR: {
-        const input = msg.text.trim();
-        const d = getData(userId);
-        const editId = d.editColabId;
-        const employee = editId ? getEmployeeById(editId) : null;
-
-        let setorFinal = input;
-        if (editId && input.toLowerCase() === 'manter') {
-          setorFinal = employee.setor || '';
-        }
-
+        const setorFinal = msg.text.trim();
         setData(userId, 'colabSetor', setorFinal);
         setState(userId, STATES.AWAITING_COLAB_SALARY);
-
-        const currentSalary = employee ? formatBRL(employee.salary || 0) : null;
-        const salaryHint = editId ? ` (atual: ${currentSalary}, ou "manter")` : ` (ou "pular")`;
         bot.sendMessage(
           chatId,
-          `✅ Setor: *${escapeMd(setorFinal)}*\n\nDigite o *Salário*${salaryHint}:`,
+          `✅ Setor: *${escapeMd(setorFinal)}*\n\nDigite o *Salário* (ou "pular"):`,
           { parse_mode: 'Markdown' }
         );
         break;
@@ -1485,20 +1487,9 @@ function startBot() {
       case STATES.AWAITING_COLAB_SALARY: {
         const input = msg.text.trim();
         const d = getData(userId);
-        const editId = d.editColabId;
-        const employee = editId ? getEmployeeById(editId) : null;
-
-        let salaryFinal = 0;
-        if (editId && input.toLowerCase() === 'manter') {
-          salaryFinal = employee ? (employee.salary || 0) : 0;
-        } else if (input.toLowerCase() === 'pular') {
-          salaryFinal = 0;
-        } else {
-          salaryFinal = parseAmount(input);
-        }
+        const salaryFinal = input.toLowerCase() === 'pular' ? 0 : parseAmount(input);
 
         saveEmployee({
-          id: editId || undefined,
           name: d.colabName,
           cpf: d.colabCpf || null,
           cargo: d.colabCargo,
@@ -1509,7 +1500,7 @@ function startBot() {
         resetConversation(userId);
         bot.sendMessage(
           chatId,
-          `✅ Colaborador *${editId ? 'atualizado' : 'cadastrado'}* com sucesso!\n\n` +
+          `✅ Colaborador *cadastrado* com sucesso!\n\n` +
           `👤 *${escapeMd(d.colabName)}*\n` +
           `CPF: ${d.colabCpf || 'Não informado'}\n` +
           `Cargo: ${escapeMd(d.colabCargo)}\n` +
@@ -1518,6 +1509,62 @@ function startBot() {
           { parse_mode: 'Markdown' }
         );
         break;
+      }
+
+      // ─── Fluxo de Edição de Colaborador por Seleção de Campo ───
+
+      case STATES.AWAITING_COLAB_EDIT_NOME: {
+        const novoNome = msg.text.trim();
+        if (!novoNome) break;
+        const pending = getData(userId).pendingColabChanges || {};
+        pending.name = novoNome;
+        setData(userId, 'pendingColabChanges', pending);
+        setState(userId, STATES.AWAITING_COLAB_EDIT_FIELD);
+        await bot.sendMessage(chatId, `✅ Nome alterado para *${escapeMd(novoNome)}*`, { parse_mode: 'Markdown' });
+        return sendColabEditMenu(bot, chatId, userId);
+      }
+
+      case STATES.AWAITING_COLAB_EDIT_CPF: {
+        const input = msg.text.trim();
+        const novoCpf = input.toLowerCase() === 'limpar' ? '' : input;
+        const pending = getData(userId).pendingColabChanges || {};
+        pending.cpf = novoCpf || null;
+        setData(userId, 'pendingColabChanges', pending);
+        setState(userId, STATES.AWAITING_COLAB_EDIT_FIELD);
+        await bot.sendMessage(chatId, `✅ CPF alterado para *${novoCpf || 'Não informado'}*`, { parse_mode: 'Markdown' });
+        return sendColabEditMenu(bot, chatId, userId);
+      }
+
+      case STATES.AWAITING_COLAB_EDIT_CARGO: {
+        const novoCargo = msg.text.trim();
+        if (!novoCargo) break;
+        const pending = getData(userId).pendingColabChanges || {};
+        pending.cargo = novoCargo;
+        setData(userId, 'pendingColabChanges', pending);
+        setState(userId, STATES.AWAITING_COLAB_EDIT_FIELD);
+        await bot.sendMessage(chatId, `✅ Cargo alterado para *${escapeMd(novoCargo)}*`, { parse_mode: 'Markdown' });
+        return sendColabEditMenu(bot, chatId, userId);
+      }
+
+      case STATES.AWAITING_COLAB_EDIT_SETOR: {
+        const novoSetor = msg.text.trim();
+        if (!novoSetor) break;
+        const pending = getData(userId).pendingColabChanges || {};
+        pending.setor = novoSetor;
+        setData(userId, 'pendingColabChanges', pending);
+        setState(userId, STATES.AWAITING_COLAB_EDIT_FIELD);
+        await bot.sendMessage(chatId, `✅ Setor alterado para *${escapeMd(novoSetor)}*`, { parse_mode: 'Markdown' });
+        return sendColabEditMenu(bot, chatId, userId);
+      }
+
+      case STATES.AWAITING_COLAB_EDIT_SALARY: {
+        const novoSalario = parseAmount(msg.text.trim());
+        const pending = getData(userId).pendingColabChanges || {};
+        pending.salary = novoSalario;
+        setData(userId, 'pendingColabChanges', pending);
+        setState(userId, STATES.AWAITING_COLAB_EDIT_FIELD);
+        await bot.sendMessage(chatId, `✅ Salário alterado para *${formatBRL(novoSalario)}*`, { parse_mode: 'Markdown' });
+        return sendColabEditMenu(bot, chatId, userId);
       }
 
       case STATES.AWAITING_CPF: {
@@ -1849,9 +1896,9 @@ function startBot() {
 
     await bot.answerCallbackQuery(query.id);
 
-    if (query.data.startsWith('colab_')) {
+    if (query.data.startsWith('colab_') && !query.data.startsWith('colab_edit_field_')) {
       const action = query.data;
-      
+
       // Remove o menu inicial
       await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
         chat_id: chatId,
@@ -1900,6 +1947,63 @@ function startBot() {
       }
     }
 
+    if (query.data.startsWith('colab_edit_field_')) {
+      const state = getState(userId);
+      if (state !== STATES.AWAITING_COLAB_EDIT_FIELD) return;
+
+      const field = query.data.replace('colab_edit_field_', '');
+
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+      });
+
+      if (field === 'done') {
+        const d = getData(userId);
+        const pending = d.pendingColabChanges || {};
+        if (Object.keys(pending).length === 0) {
+          resetConversation(userId);
+          return bot.sendMessage(chatId, 'ℹ️ Nenhuma alteração realizada.');
+        }
+        const employee = getEmployeeById(d.editColabId);
+        saveEmployee({
+          id: d.editColabId,
+          name:   pending.name   !== undefined ? pending.name   : employee.name,
+          cpf:    pending.cpf    !== undefined ? pending.cpf    : (employee.cpf   || null),
+          cargo:  pending.cargo  !== undefined ? pending.cargo  : (employee.cargo || ''),
+          setor:  pending.setor  !== undefined ? pending.setor  : (employee.setor || ''),
+          salary: pending.salary !== undefined ? pending.salary : (employee.salary || 0),
+        });
+        resetConversation(userId);
+        return bot.sendMessage(chatId, `✅ Colaborador atualizado com sucesso!`, { parse_mode: 'Markdown' });
+      }
+
+      if (field === 'nome') {
+        setState(userId, STATES.AWAITING_COLAB_EDIT_NOME);
+        return bot.sendMessage(chatId, '👤 Digite o *novo nome* do colaborador:', { parse_mode: 'Markdown' });
+      }
+
+      if (field === 'cpf') {
+        setState(userId, STATES.AWAITING_COLAB_EDIT_CPF);
+        return bot.sendMessage(chatId, '🪪 Digite o *novo CPF* (ou "limpar" para remover):', { parse_mode: 'Markdown' });
+      }
+
+      if (field === 'cargo') {
+        setState(userId, STATES.AWAITING_COLAB_EDIT_CARGO);
+        return bot.sendMessage(chatId, '💼 Digite o *novo cargo*:', { parse_mode: 'Markdown' });
+      }
+
+      if (field === 'setor') {
+        setState(userId, STATES.AWAITING_COLAB_EDIT_SETOR);
+        return bot.sendMessage(chatId, '🏢 Digite o *novo setor*:', { parse_mode: 'Markdown' });
+      }
+
+      if (field === 'salary') {
+        setState(userId, STATES.AWAITING_COLAB_EDIT_SALARY);
+        return bot.sendMessage(chatId, '💰 Digite o *novo salário* (ex: 2.500,00):', { parse_mode: 'Markdown' });
+      }
+    }
+
     if (query.data.startsWith('sel_colab_')) {
       const state = getState(userId);
       if (state !== STATES.AWAITING_COLAB_EDIT_SELECTION && state !== STATES.AWAITING_COLAB_DELETE_SELECTION) return;
@@ -1921,8 +2025,9 @@ function startBot() {
       } else {
         // Edit flow
         setData(userId, 'editColabId', empId);
-        setState(userId, STATES.AWAITING_COLAB_NOME);
-        return bot.sendMessage(chatId, `✏️ Editando: *${escapeMd(employee.name)}*\n\nDigite o novo *Nome* (ou envie "manter"):`, { parse_mode: 'Markdown' });
+        setData(userId, 'pendingColabChanges', {});
+        setState(userId, STATES.AWAITING_COLAB_EDIT_FIELD);
+        return sendColabEditMenu(bot, chatId, userId);
       }
     }
 
