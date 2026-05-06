@@ -224,7 +224,7 @@ function buildReceiptHTML(data) {
   <meta charset="UTF-8" />
   <title>Recibo Nº ${receiptNumber}</title>
   <style>
-    @page { size: A4; margin: 10mm 14mm; }
+    @page { size: A4; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Helvetica', 'Arial', sans-serif;
@@ -232,14 +232,18 @@ function buildReceiptHTML(data) {
       line-height: 1.5;
       color: #1a1612;
       background: #ffffff;
+      height: 297mm;
+      width: 210mm;
+      padding: 8mm 14mm;
+      display: flex;
+      flex-direction: column;
     }
 
     .block {
       width: 100%;
-      padding: 1mm 0;
-      page-break-inside: avoid;
-      display: flex;
-      flex-direction: column;
+      flex: 1;
+      padding: 2mm 0;
+      overflow: hidden;
     }
 
     .header {
@@ -318,8 +322,8 @@ function buildReceiptHTML(data) {
       justify-content: space-between;
       align-items: flex-end;
       gap: 12mm;
-      margin-top: 4mm;
-      padding-bottom: 3mm;
+      margin-top: 2mm;
+      padding-bottom: 1.5mm;
       border-bottom: 0.5px solid #efeae0;
     }
     .kicker {
@@ -357,9 +361,9 @@ function buildReceiptHTML(data) {
     .date-meta { font-size: 7.5pt; color: #5a524a; margin-top: 1mm; }
 
     .body {
-      margin-top: 3mm;
+      margin-top: 2mm;
       font-size: 9pt;
-      line-height: 1.65;
+      line-height: 1.5;
       color: #3a342d;
       text-align: justify;
     }
@@ -377,8 +381,8 @@ function buildReceiptHTML(data) {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10mm;
-      margin-top: 3mm;
-      padding-top: 3mm;
+      margin-top: 2mm;
+      padding-top: 2mm;
       border-top: 0.5px solid #efeae0;
     }
     .group-label {
@@ -412,7 +416,7 @@ function buildReceiptHTML(data) {
     }
 
     .sigs {
-      margin-top: 6mm;
+      margin-top: 4mm;
       padding-top: 2mm;
       display: flex;
       gap: 12mm;
@@ -420,7 +424,7 @@ function buildReceiptHTML(data) {
     .sig-col { flex: 1; text-align: center; }
     .sig-line {
       border-top: 0.5px solid #1a1612;
-      margin-top: 5mm;
+      margin-top: 3mm;
       margin-bottom: 1.5mm;
     }
     .sig-name { font-size: 9pt; font-weight: 700; color: #1a1612; }
@@ -437,7 +441,8 @@ function buildReceiptHTML(data) {
     .divider {
       border: none;
       border-top: 1px dashed #b8b0a4;
-      margin: 2mm 0;
+      margin: 1mm 0;
+      flex-shrink: 0;
     }
     .divider-label {
       text-align: center;
@@ -446,7 +451,8 @@ function buildReceiptHTML(data) {
       text-transform: uppercase;
       color: #8a8078;
       font-weight: 500;
-      margin: 1mm 0 2mm;
+      margin: 0 0 1mm;
+      flex-shrink: 0;
     }
   </style>
 </head>
