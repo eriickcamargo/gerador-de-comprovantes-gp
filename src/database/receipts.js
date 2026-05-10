@@ -91,6 +91,8 @@ function getReceiptsByEmployeeAndPeriod(employeeName, month, year) {
   return db.all(
     `SELECT * FROM receipts
      WHERE LOWER(employee_name) = LOWER(?)
+       AND status != 'cancelled'
+       AND vale_type != 'Salário'
        AND (
          substr(payment_date, 4, 7) = ?
          OR (payment_date IS NULL AND substr(created_at, 1, 7) = ?)
@@ -103,7 +105,6 @@ function getReceiptsByEmployeeAndPeriod(employeeName, month, year) {
 function getSumByEmployeeAndPeriod(employeeName, month, year) {
   const receipts = getReceiptsByEmployeeAndPeriod(employeeName, month, year);
   return receipts
-    .filter(r => r.status !== 'cancelled' && r.vale_type !== 'Salário')
     .reduce((sum, r) => {
       const val = parseFloat(
         String(r.amount || '0').replace('R$', '').replace(/\./g, '').replace(',', '.').trim()
