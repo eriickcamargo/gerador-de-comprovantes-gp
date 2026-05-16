@@ -149,4 +149,4 @@ function lastInsertRowId() {
   return result ? result.id : null;
 }
 
-module.exports = { initDB, getDB, run, all, get, lastInsertRowId, persist };
+module.exports = { initDB, getDB, run, all, get, lastInsertRowId, persist, DB_PATH };

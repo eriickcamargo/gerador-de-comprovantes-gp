@@ -8,6 +8,7 @@ const { generatePDF, generateStatementPDF, cleanupFile } = require('../pdf/gener
 const { findEmployee, saveEmployee, listEmployees, deleteEmployee, getEmployeeById } = require('../database/employees');
 const { getCompany, saveCompany } = require('../database/company');
 const { saveReceipt, listReceipts, getReceiptByNumber, searchReceiptsByEmployee, getReceiptsByEmployeeAndPeriod, getSumByEmployeeAndPeriod, getSalaryReceiptForPeriod, cancelReceiptByNumber, updateReceipt } = require('../database/receipts');
+const { DB_PATH } = require('../database/db');
 const { STATES, getState, setState, getData, setData, resetConversation } = require('./conversations');
 
 const TEMP_DIR = path.join(__dirname, '../../temp');
@@ -955,6 +956,22 @@ function startBot() {
       `O recibo não foi apagado do banco de dados, mas agora consta como cancelado no histórico e extrato.`,
       { parse_mode: 'Markdown' }
     );
+  });
+
+  // ─── /backup ──────────────────────────────────────────────────────────────
+  bot.onText(/\/backup/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (!isAllowed(msg.from.id)) return;
+
+    if (!fs.existsSync(DB_PATH)) {
+      return bot.sendMessage(chatId, '❌ Arquivo de banco de dados não encontrado.');
+    }
+
+    const date = new Date().toISOString().slice(0, 10);
+    await bot.sendDocument(chatId, DB_PATH, {}, {
+      filename: `backup_${date}.sqlite`,
+      contentType: 'application/octet-stream',
+    });
   });
 
   // ─── /editar_recibo ───────────────────────────────────────────────────────
